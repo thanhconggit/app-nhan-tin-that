@@ -71,6 +71,47 @@ function emitAck(socket, ev, payload) {
   const hist = (await r.json()).messages || [];
   ok(hist.length >= 2, 'Lich su tin nhan da luu tren server', '(' + hist.length + ' tin)');
 
+  // --- Nhom chat ---
+  const userC = 'testuserc' + Date.now().toString().slice(-6);
+  const regC = await fetch(BASE + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: userC, password: 'test123456', displayName: 'Thanh Vien C' }) });
+  ok(regC.status === 201, 'Dang ky thanh vien C thanh cong', '(HTTP ' + regC.status + ')');
+  const tc = await login(userC, 'test123456');
+  const C = await connect(tc);
+
+  const createdEvt = waitEvent(B, 'group:created', (g) => g.name === 'Nhom Test', 8000, 'B nhan su kien group:created');
+  const gRes = await fetch(BASE + '/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ta }, body: JSON.stringify({ name: 'Nhom Test', members: [newUser, userC] }) });
+  const gBody = await gRes.json().catch(() => ({}));
+  ok(gRes.status === 201 && !!gBody.group?.id, 'Tao nhom thanh cong', '(HTTP ' + gRes.status + ')');
+  const gid = gBody.group?.id;
+  const gEvt = await createdEvt;
+  ok(gEvt.id === gid, 'Thanh vien B nhan thong bao nhom moi');
+
+  const gList = await (await fetch(BASE + '/api/groups', { headers: { Authorization: 'Bearer ' + tb } })).json();
+  ok((gList.groups || []).some((g) => g.id === gid), 'B thay nhom trong danh sach nhom');
+
+  const gotGrpA = waitEvent(A, 'message:new', (m) => m.groupId === gid && m.from === newUser, 8000, 'admin nhan tin nhom');
+  const gotGrpC = waitEvent(C, 'message:new', (m) => m.groupId === gid && m.from === newUser, 8000, 'C nhan tin nhom');
+  const ackG = await emitAck(B, 'message:send', { groupId: gid, type: 'text', content: 'Chao ca nhom!' });
+  ok(ackG.ok === true, 'B gui tin vao nhom - server ack ok');
+  const gm1 = await gotGrpA; const gm2 = await gotGrpC;
+  ok(gm1.content === 'Chao ca nhom!' && gm2.content === 'Chao ca nhom!', 'Ca admin va C deu NHAN DUOC tin nhom cua B');
+
+  const gHist = await (await fetch(BASE + '/api/groups/' + gid + '/messages', { headers: { Authorization: 'Bearer ' + tc } })).json();
+  ok((gHist.messages || []).some((m) => m.content === 'Chao ca nhom!'), 'Lich su nhom doc duoc tu server', '(' + (gHist.messages || []).length + ' tin)');
+
+  const userD = 'outsider' + Date.now().toString().slice(-6);
+  await fetch(BASE + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: userD, password: 'test123456', displayName: 'Nguoi Ngoai' }) });
+  const td = await login(userD, 'test123456');
+  const dRes = await fetch(BASE + '/api/groups/' + gid + '/messages', { headers: { Authorization: 'Bearer ' + td } });
+  ok(dRes.status === 403, 'Nguoi ngoai nhom bi chan doc lich su', '(HTTP ' + dRes.status + ')');
+  const D = await connect(td);
+  const ackD = await emitAck(D, 'message:send', { groupId: gid, type: 'text', content: 'xin vao nhom' });
+  ok(ackD.ok === false, 'Nguoi ngoai nhom khong gui duoc tin vao nhom');
+  D.close(); C.close();
+
+  const badGroup = await fetch(BASE + '/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ta }, body: JSON.stringify({ name: 'Thieu thanh vien', members: [newUser] }) });
+  ok(badGroup.status === 400, 'Tao nhom voi chi 1 thanh vien bi tu choi', '(HTTP ' + badGroup.status + ')');
+
   // --- WebRTC signaling relay ---
   const incoming = waitEvent(B, 'call:incoming', (d) => d.from === 'admin', 8000, 'B nhan cuoc goi den');
   A.emit('call:offer', { to: newUser, offer: { type: 'offer', sdp: 'fake-sdp-offer' }, callType: 'voice' });
