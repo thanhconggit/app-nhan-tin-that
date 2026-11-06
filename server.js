@@ -40,16 +40,36 @@ let registeredUsers = [];
 let groups = [];
 let groupSeq = 0;
 const publicGroup = (g) => ({ id: g.id, name: g.name, members: g.members, createdBy: g.createdBy, at: g.at });
+function safeParseReactions(s) { try { const o = JSON.parse(s || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
 const userByName = new Map(USERS.map((u) => [u.username, u]));
 const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
 let seq = 0;
 
 let saveTimer = null;
+function writeMessagesFile() {
+  try { fs.writeFileSync(MSG_FILE, JSON.stringify(messages)); } catch (e) { console.error('Luu tin nhan loi:', e.message); }
+}
+function persistGroupsFile() {
+  try { fs.writeFileSync(GROUP_FILE, JSON.stringify(groups)); } catch (e) { console.error('Luu nhom loi:', e.message); }
+}
+
+/* Cap nhat 1 tin nhan da co (thu hoi / cam xuc) vao noi luu tru */
+function updateStoredMessage(msg) {
+  if (pool) {
+    pool.query(
+      'UPDATE messages SET type=$1, content=$2, reactions=$3 WHERE id=$4',
+      [msg.type, msg.content, JSON.stringify(msg.reactions || {}), msg.id]
+    ).catch((e) => console.error('Cap nhat tin nhan (DB) loi:', e.message));
+    return;
+  }
+  writeMessagesFile();
+}
+
 function persist(msg) {
   if (pool) {
     pool.query(
-      'INSERT INTO messages(id, sender, recipient, type, content, at, grp) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
-      [msg.id, msg.from, msg.to || '', msg.type, msg.content, msg.at, msg.groupId || null]
+      'INSERT INTO messages(id, sender, recipient, type, content, at, grp, reactions) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING',
+      [msg.id, msg.from, msg.to || '', msg.type, msg.content, msg.at, msg.groupId || null, JSON.stringify(msg.reactions || {})]
     ).catch((e) => console.error('Luu tin nhan (DB) loi:', e.message));
     return;
   }
@@ -84,8 +104,9 @@ function saveUser(u) {
 async function initStorage() {
   if (pool) {
     await pool.query('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL)');
-    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL, grp TEXT)');
+    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL, grp TEXT, reactions TEXT)');
     await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS grp TEXT');
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT');
     await pool.query('CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created_by TEXT NOT NULL, at BIGINT NOT NULL)');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
@@ -97,8 +118,8 @@ async function initStorage() {
         console.log(`[DB] Da xoa ${before - registeredUsers.length} tai khoan theo REMOVE_USERS: ${REMOVE_USERS.join(', ')}`);
       }
     }
-    const rm = await pool.query('SELECT id, sender, recipient, type, content, at, grp FROM messages ORDER BY id ASC');
-    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient || undefined, type: r.type, content: r.content, at: Number(r.at), ...(r.grp ? { groupId: r.grp } : {}) }));
+    const rm = await pool.query('SELECT id, sender, recipient, type, content, at, grp, reactions FROM messages ORDER BY id ASC');
+    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient || undefined, type: r.type, content: r.content, at: Number(r.at), reactions: safeParseReactions(r.reactions), ...(r.grp ? { groupId: r.grp } : {}) }));
     const rg = await pool.query('SELECT id, name, members, created_by, at FROM groups ORDER BY at ASC');
     groups = rg.rows.map((r) => ({ id: r.id, name: r.name, members: JSON.parse(r.members), createdBy: r.created_by, at: Number(r.at) }));
     console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky, ${messages.length} tin nhan va ${groups.length} nhom tu Postgres`);
@@ -116,6 +137,7 @@ async function initStorage() {
     }
   }
   for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
+  for (const m of messages) if (!m.reactions || typeof m.reactions !== 'object') m.reactions = {};
   seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
 }
 
@@ -197,6 +219,24 @@ app.get('/api/groups', authRest, (req, res) => {
   res.json({ groups: groups.filter((g) => g.members.includes(req.username)).map(publicGroup) });
 });
 
+// Xoa nhom: chi nguoi tao nhom moi xoa duoc; xoa ca tin nhan cua nhom
+app.delete('/api/groups/:id', authRest, async (req, res) => {
+  const idx = groups.findIndex((x) => x.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Khong tim thay nhom' });
+  const g = groups[idx];
+  if (g.createdBy !== req.username) return res.status(403).json({ error: 'Chi nguoi tao nhom moi xoa duoc nhom' });
+  groups.splice(idx, 1);
+  messages = messages.filter((m) => m.groupId !== g.id);
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM messages WHERE grp=$1', [g.id]);
+      await pool.query('DELETE FROM groups WHERE id=$1', [g.id]);
+    } catch (e) { console.error('Xoa nhom (DB) loi:', e.message); }
+  } else { persistGroupsFile(); writeMessagesFile(); }
+  for (const m of g.members) if (m !== req.username) emitToUser(m, 'group:deleted', { id: g.id, name: g.name });
+  res.json({ ok: true });
+});
+
 app.get('/api/groups/:id/messages', authRest, (req, res) => {
   const g = groups.find((x) => x.id === req.params.id);
   if (!g) return res.status(404).json({ error: 'Khong tim thay nhom' });
@@ -217,6 +257,15 @@ function broadcastPresence() { io.emit('presence', { online: [...onlineUsers()] 
 function emitToUser(username, ev, payload) {
   const set = socketsByUser.get(username);
   if (set) for (const id of set) io.to(id).emit(ev, payload);
+}
+/* Danh sach nguoi nhan thong bao ve 1 tin nhan (doi tac 1-1 hoac thanh vien nhom), tru nguoi gui */
+function msgAudience(msg, except) {
+  if (msg.groupId) {
+    const g = groups.find((x) => x.id === msg.groupId);
+    return g ? g.members.filter((u) => u !== except) : [];
+  }
+  const other = msg.from === except ? msg.to : msg.from;
+  return other && other !== except ? [other] : [];
 }
 
 io.use((socket, next) => {
@@ -246,7 +295,7 @@ io.on('connection', (socket) => {
     if (groupId) {
       const g = groups.find((x) => x.id === groupId);
       if (!g || !g.members.includes(me)) return ack?.({ ok: false, error: 'Nhom khong hop le' });
-      const msg = { id: ++seq, from: me, groupId, type, content, at: Date.now() };
+      const msg = { id: ++seq, from: me, groupId, type, content, at: Date.now(), reactions: {} };
       messages.push(msg);
       if (messages.length > 5000) messages = messages.slice(-5000);
       persist(msg);
@@ -254,12 +303,41 @@ io.on('connection', (socket) => {
       return ack?.({ ok: true, message: msg });
     }
     if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
-    const msg = { id: ++seq, from: me, to, type, content, at: Date.now() };
+    const msg = { id: ++seq, from: me, to, type, content, at: Date.now(), reactions: {} };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
     persist(msg);
     emitToUser(to, 'message:new', msg);
     ack?.({ ok: true, message: msg });
+  });
+
+  /* Thu hoi tin nhan: chi nguoi gui, ca hai phia deu thay "Tin nhan da thu hoi" */
+  socket.on('message:recall', ({ id } = {}, ack) => {
+    const msg = messages.find((m) => m.id === Number(id));
+    if (!msg || msg.from !== me) return ack?.({ ok: false, error: 'Chi thu hoi duoc tin nhan cua ban' });
+    if (msg.type === 'recalled' || msg.type === 'call') return ack?.({ ok: false, error: 'Khong the thu hoi tin nay' });
+    msg.type = 'recalled'; msg.content = ''; msg.reactions = {};
+    updateStoredMessage(msg);
+    for (const u of msgAudience(msg, me)) emitToUser(u, 'message:updated', msg);
+    ack?.({ ok: true, message: msg });
+  });
+
+  /* Tha cam xuc vao tin nhan: bam lai cung 1 emoji de go */
+  const REACT_EMOJIS = new Set(['❤️', '😂', '😮', '😢', '👍', '😡']);
+  socket.on('message:react', ({ id, emoji } = {}, ack) => {
+    const msg = messages.find((m) => m.id === Number(id));
+    if (!msg || !REACT_EMOJIS.has(emoji)) return ack?.({ ok: false, error: 'Cam xuc khong hop le' });
+    if (msg.type === 'recalled') return ack?.({ ok: false, error: 'Tin da thu hoi' });
+    const isParty = msg.groupId
+      ? (groups.find((g) => g.id === msg.groupId)?.members.includes(me) ?? false)
+      : (msg.from === me || msg.to === me);
+    if (!isParty) return ack?.({ ok: false, error: 'Khong co quyen voi tin nay' });
+    msg.reactions = msg.reactions || {};
+    if (msg.reactions[me] === emoji) delete msg.reactions[me]; else msg.reactions[me] = emoji;
+    updateStoredMessage(msg);
+    const payload = { id: msg.id, reactions: msg.reactions, from: msg.from, to: msg.to, groupId: msg.groupId };
+    for (const u of msgAudience(msg, me)) emitToUser(u, 'message:reacted', payload);
+    ack?.({ ok: true, reactions: msg.reactions });
   });
 
   socket.on('typing', ({ to } = {}) => { if (userByName.has(to)) emitToUser(to, 'typing', { from: me }); });
