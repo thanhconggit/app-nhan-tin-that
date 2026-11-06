@@ -27,6 +27,7 @@ if (DATABASE_URL) {
 const DATA_DIR = path.join(__dirname, 'data');
 const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const USER_FILE = path.join(DATA_DIR, 'users.json');
+const GROUP_FILE = path.join(DATA_DIR, 'groups.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Danh sach tai khoan da dang ky can XOA khoi noi luu tru khi khoi dong,
@@ -36,6 +37,9 @@ const REMOVE_USERS = (process.env.REMOVE_USERS || '').split(',').map((s) => s.tr
 
 let messages = [];
 let registeredUsers = [];
+let groups = [];
+let groupSeq = 0;
+const publicGroup = (g) => ({ id: g.id, name: g.name, members: g.members, createdBy: g.createdBy, at: g.at });
 const userByName = new Map(USERS.map((u) => [u.username, u]));
 const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
 let seq = 0;
@@ -44,8 +48,8 @@ let saveTimer = null;
 function persist(msg) {
   if (pool) {
     pool.query(
-      'INSERT INTO messages(id, sender, recipient, type, content, at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING',
-      [msg.id, msg.from, msg.to, msg.type, msg.content, msg.at]
+      'INSERT INTO messages(id, sender, recipient, type, content, at, grp) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
+      [msg.id, msg.from, msg.to || '', msg.type, msg.content, msg.at, msg.groupId || null]
     ).catch((e) => console.error('Luu tin nhan (DB) loi:', e.message));
     return;
   }
@@ -53,6 +57,17 @@ function persist(msg) {
   saveTimer = setTimeout(() => {
     try { fs.writeFileSync(MSG_FILE, JSON.stringify(messages)); } catch (e) { console.error('Luu tin nhan loi:', e.message); }
   }, 150);
+}
+
+function saveGroup(g) {
+  if (pool) {
+    pool.query(
+      'INSERT INTO groups(id, name, members, created_by, at) VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING',
+      [g.id, g.name, JSON.stringify(g.members), g.createdBy, g.at]
+    ).catch((e) => console.error('Luu nhom (DB) loi:', e.message));
+    return;
+  }
+  try { fs.writeFileSync(GROUP_FILE, JSON.stringify(groups)); } catch (e) { console.error('Luu nhom loi:', e.message); }
 }
 
 function saveUser(u) {
@@ -69,7 +84,9 @@ function saveUser(u) {
 async function initStorage() {
   if (pool) {
     await pool.query('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL)');
-    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL, grp TEXT)');
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS grp TEXT');
+    await pool.query('CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created_by TEXT NOT NULL, at BIGINT NOT NULL)');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
     if (REMOVE_USERS.length) {
@@ -80,11 +97,14 @@ async function initStorage() {
         console.log(`[DB] Da xoa ${before - registeredUsers.length} tai khoan theo REMOVE_USERS: ${REMOVE_USERS.join(', ')}`);
       }
     }
-    const rm = await pool.query('SELECT id, sender, recipient, type, content, at FROM messages ORDER BY id ASC');
-    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient, type: r.type, content: r.content, at: Number(r.at) }));
-    console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky va ${messages.length} tin nhan tu Postgres`);
+    const rm = await pool.query('SELECT id, sender, recipient, type, content, at, grp FROM messages ORDER BY id ASC');
+    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient || undefined, type: r.type, content: r.content, at: Number(r.at), ...(r.grp ? { groupId: r.grp } : {}) }));
+    const rg = await pool.query('SELECT id, name, members, created_by, at FROM groups ORDER BY at ASC');
+    groups = rg.rows.map((r) => ({ id: r.id, name: r.name, members: JSON.parse(r.members), createdBy: r.created_by, at: Number(r.at) }));
+    console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky, ${messages.length} tin nhan va ${groups.length} nhom tu Postgres`);
   } else {
     try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
+    try { if (fs.existsSync(GROUP_FILE)) groups = JSON.parse(fs.readFileSync(GROUP_FILE, 'utf8')); if (!Array.isArray(groups)) groups = []; } catch { groups = []; }
     try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
     if (REMOVE_USERS.length) {
       const before = registeredUsers.length;
@@ -157,6 +177,33 @@ app.get('/api/messages/:peer', authRest, (req, res) => {
   res.json({ messages: list });
 });
 
+// ===== Nhom chat =====
+// Tao nhom: nguoi tao tu dong la thanh vien, can chon it nhat 2 thanh vien khac
+app.post('/api/groups', authRest, (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  const rawMembers = Array.isArray((req.body || {}).members) ? req.body.members : [];
+  const members = [...new Set(rawMembers.map((m) => String(m || '').trim().toLowerCase()))]
+    .filter((m) => m !== req.username && userByName.has(m));
+  if (name.length < 2 || name.length > 60) return res.status(400).json({ error: 'Ten nhom tu 2-60 ky tu' });
+  if (members.length < 2) return res.status(400).json({ error: 'Chon it nhat 2 thanh vien (ngoai ban)' });
+  const g = { id: 'g' + Date.now().toString(36) + (++groupSeq).toString(36), name, members: [req.username, ...members], createdBy: req.username, at: Date.now() };
+  groups.push(g);
+  saveGroup(g);
+  for (const m of g.members) if (m !== req.username) emitToUser(m, 'group:created', publicGroup(g));
+  res.status(201).json({ group: publicGroup(g) });
+});
+
+app.get('/api/groups', authRest, (req, res) => {
+  res.json({ groups: groups.filter((g) => g.members.includes(req.username)).map(publicGroup) });
+});
+
+app.get('/api/groups/:id/messages', authRest, (req, res) => {
+  const g = groups.find((x) => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Khong tim thay nhom' });
+  if (!g.members.includes(req.username)) return res.status(403).json({ error: 'Ban khong phai thanh vien nhom' });
+  res.json({ messages: messages.filter((m) => m.groupId === g.id) });
+});
+
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 const server = http.createServer(app);
@@ -191,12 +238,22 @@ io.on('connection', (socket) => {
   broadcastPresence();
 
   socket.on('message:send', (payload, ack) => {
-    const { to, type, content } = payload || {};
-    if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
+    const { to, groupId, type, content } = payload || {};
     if (!ALLOWED_TYPES.has(type)) return ack?.({ ok: false, error: 'Loai tin nhan khong hop le' });
     if (typeof content !== 'string' || content.length === 0) return ack?.({ ok: false, error: 'Noi dung rong' });
     if ((type === 'image' || type === 'audio') && content.length > MAX_DATA_URL) return ack?.({ ok: false, error: 'File qua lon' });
     if (type !== 'image' && type !== 'audio' && content.length > 4000) return ack?.({ ok: false, error: 'Noi dung qua dai' });
+    if (groupId) {
+      const g = groups.find((x) => x.id === groupId);
+      if (!g || !g.members.includes(me)) return ack?.({ ok: false, error: 'Nhom khong hop le' });
+      const msg = { id: ++seq, from: me, groupId, type, content, at: Date.now() };
+      messages.push(msg);
+      if (messages.length > 5000) messages = messages.slice(-5000);
+      persist(msg);
+      for (const m of g.members) if (m !== me) emitToUser(m, 'message:new', msg);
+      return ack?.({ ok: true, message: msg });
+    }
+    if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
     const msg = { id: ++seq, from: me, to, type, content, at: Date.now() };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
