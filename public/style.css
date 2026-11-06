@@ -1,4 +1,4 @@
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#eef3fb;color:#17233b}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#eef3fb;color:#17233b}
 button{cursor:pointer;border:1px solid #c9d6ee;background:#fff;border-radius:10px;padding:8px 12px;font-size:15px}
 button:hover{background:#eaf1ff}.danger{background:#e5484d;color:#fff;border-color:#e5484d}
 input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;width:100%}
@@ -8,6 +8,7 @@ input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;wi
 .login-box{background:#fff;border-radius:18px;padding:28px;width:min(420px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.25);text-align:center}
 .login-box .logo{font-size:44px}.login-box h1{color:#0068ff;margin:6px 0}
 #loginForm{display:grid;gap:10px;margin:14px 0}#loginForm button{background:#0068ff;color:#fff;border:none;padding:12px;font-weight:600}
+#registerForm{display:grid;gap:10px;margin:14px 0;text-align:center}#registerForm button{background:#0068ff;color:#fff;border:none;padding:12px;font-weight:600}
 #quickAccounts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #quickAccounts button{text-align:left;font-size:13px;line-height:1.35}
 /* layout */
@@ -50,4 +51,3 @@ input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;wi
 .toast{background:#17233b;color:#fff;padding:11px 14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:300px}
 @media(max-width:760px){#sidebar{width:100%}#chatPane{display:none}#appView.chat-open #sidebar{display:none}#appView.chat-open #chatPane{display:flex}}
 @media(min-width:761px){#backBtn{display:none}}
-[hidden]{display:none!important}
