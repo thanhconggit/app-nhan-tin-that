@@ -10,14 +10,17 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 ## Tính năng
 
 - Đăng nhập bằng tài khoản được cấp sẵn, hoặc **tự tạo tài khoản** ngay ở màn hình đăng nhập
-  (mục "Tạo tài khoản"): tài khoản được lưu trên server tại `data/users.json`
-  (mật khẩu chỉ lưu dạng bcrypt hash), tạo xong đăng nhập được ngay và xuất hiện trong danh bạ của mọi người.
+  (mục "Tạo tài khoản"): tài khoản được lưu trên server (mật khẩu chỉ lưu dạng bcrypt hash),
+  tạo xong đăng nhập được ngay và xuất hiện trong danh bạ của mọi người.
   Tên tài khoản 3–20 ký tự (chữ thường, số, `_`), mật khẩu tối thiểu 6 ký tự, không tạo trùng được.
-  Lưu ý: giống lịch sử tin nhắn, file tài khoản nằm trên đĩa của host — gói Free của Render dùng đĩa tạm
-  nên tài khoản tự tạo có thể mất khi service restart/redeploy; muốn lưu bền vững cần gắn thêm database/đĩa persistent.
+- **Lưu trữ bền vững bằng Postgres (Neon):** khi biến môi trường `DATABASE_URL` được đặt (chuỗi kết nối
+  Neon), tài khoản tự đăng ký và toàn bộ tin nhắn được lưu vào database — **không mất khi deploy lại hay
+  restart** (đã kiểm chứng thực tế: trên Render Free, đĩa tạm bị xóa sạch ở mỗi lần deploy, làm mất dữ liệu
+  lưu bằng file). Khi không có `DATABASE_URL`, app lùi về lưu file `data/users.json` / `data/messages.json`
+  (chỉ phù hợp chạy local). Hai bảng tự tạo lúc khởi động: `users`, `messages`.
 - Danh bạ / danh sách trò chuyện: trạng thái online thật từ server, badge chưa đọc,
   thông báo trình duyệt (Notification API) + toast trong app khi có tin nhắn mới lúc không mở cuộc trò chuyện đó.
-- Chat 1-1 thời gian thực qua Socket.IO; lịch sử tin nhắn lưu trên server (file `data/messages.json`).
+- Chat 1-1 thời gian thực qua Socket.IO; lịch sử tin nhắn lưu trên server (Postgres, hoặc file khi chạy local).
 - Gửi: tin nhắn chữ, ảnh (nén trên trình duyệt, giới hạn kích thước), emoji, sticker, GIF
   (bộ GIF/sticker có sẵn trong app, không cần API key ngoài), tin nhắn thoại
   (ghi bằng MediaRecorder, tối đa 60 giây / 2MB, người nhận bấm phát lại được).
@@ -137,10 +140,9 @@ Tài khoản nằm trong file `seed-users.js`. Mật khẩu chỉ lưu dạng **
   ```js
   { urls: 'turn:YOUR_TURN_HOST:3478', username: '...', credential: '...' }
   ```
-- **Lịch sử tin nhắn có thể bị mất khi deploy lại:** tin nhắn lưu ở file `data/messages.json` trên đĩa của host.
-  Đĩa của gói miễn phí (Render/Fly) là tạm thời — khi dịch vụ restart/deploy lại, file này có thể bị xoá và lịch sử quay về trống.
-  Muốn lưu bền vững thì gắn thêm Persistent Disk (Render, có phí) trỏ vào thư mục `data/`,
-  hoặc chuyển sang cơ sở dữ liệu (PostgreSQL/MongoDB) — phần đó chưa làm trong bản này.
+- **Lưu trữ:** đã xử lý bằng Postgres (Neon, miễn phí) qua biến `DATABASE_URL` — xem mục Tính năng ở đầu file.
+  Chỉ khi chạy local không đặt `DATABASE_URL` thì app mới lưu ra file trên đĩa, và dữ liệu file đó vẫn mất
+  khi host miễn phí restart/deploy (đĩa tạm).
 - **Ảnh / tin nhắn thoại gửi dạng data URL** và lưu cùng file tin nhắn, phù hợp quy mô test / nhóm nhỏ;
   dùng đông người lâu dài nên chuyển sang lưu trữ file riêng (S3…) và cơ sở dữ liệu.
 - **Bảo mật:** mật khẩu ở trên là mật khẩu test đã công khai trong file này — đổi trước khi dùng thật;
