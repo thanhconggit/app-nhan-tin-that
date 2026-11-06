@@ -154,6 +154,47 @@ function emitAck(socket, ev, payload) {
   const gHist2 = await fetch(BASE + '/api/groups/' + gid + '/messages', { headers: { Authorization: 'Bearer ' + tc } });
   ok(gHist2.status === 404, 'Lich su nhom da xoa khong con doc duoc', '(HTTP ' + gHist2.status + ')');
 
+  // --- Tra loi (quote), chia se (forward), luu tin, avatar ---
+  const gotReply = waitEvent(A, 'message:new', (m) => m.replyTo && m.replyTo.id === m2.id, 8000, 'A nhan tin tra loi');
+  const ackRep = await emitAck(B, 'message:send', { to: 'admin', type: 'text', content: 'Tra loi sticker nay', replyTo: m2.id });
+  const repMsg = await gotReply;
+  ok(ackRep.ok === true && repMsg.replyTo?.from === newUser && repMsg.replyTo?.preview === '🎨 Sticker', 'Tra loi tin kem trich dan dung nguoi + dung xem truoc');
+
+  const ackRepBad = await emitAck(B, 'message:send', { to: 'admin', type: 'text', content: 'Reply id sai', replyTo: 99999999 });
+  ok(ackRepBad.ok === true && !ackRepBad.message.replyTo, 'ReplyTo khong ton tai -> van gui, khong trich dan');
+
+  const gotFwd = waitEvent(A, 'message:new', (m) => m.forwarded === true && m.content === m2.content, 8000, 'A nhan tin chia se');
+  const ackFwd = await emitAck(B, 'message:send', { to: 'admin', forwardOf: m2.id });
+  await gotFwd;
+  ok(ackFwd.ok === true && ackFwd.message.forwarded === true, 'Chia se tin: A nhan ban sao co danh dau forwarded');
+
+  const ackFwdBad = await emitAck(B, 'message:send', { to: 'admin', forwardOf: 99999999 });
+  ok(ackFwdBad.ok === false, 'Chia se tin khong ton tai bi tu choi');
+
+  const sv = await fetch(BASE + '/api/saved', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tb }, body: JSON.stringify({ msgId: m2.id }) });
+  ok(sv.status === 201, 'Luu tin nhan thanh cong', '(HTTP ' + sv.status + ')');
+  const svList = await (await fetch(BASE + '/api/saved', { headers: { Authorization: 'Bearer ' + tb } })).json();
+  ok((svList.saved || []).length === 1 && svList.saved[0].snapshot.content === m2.content, 'Danh sach da luu chua ban chup dung noi dung');
+  const svDup = await fetch(BASE + '/api/saved', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tb }, body: JSON.stringify({ msgId: m2.id }) });
+  const svList2 = await (await fetch(BASE + '/api/saved', { headers: { Authorization: 'Bearer ' + tb } })).json();
+  ok(svDup.status === 200 && (svList2.saved || []).length === 1, 'Luu trung khong bi nhan doi');
+  const svOut = await fetch(BASE + '/api/saved', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + td }, body: JSON.stringify({ msgId: m2.id }) });
+  ok(svOut.status === 404, 'Nguoi ngoai cuoc tro chuyen khong luu duoc tin', '(HTTP ' + svOut.status + ')');
+  const svDel = await fetch(BASE + '/api/saved/' + m2.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + tb } });
+  const svList3 = await (await fetch(BASE + '/api/saved', { headers: { Authorization: 'Bearer ' + tb } })).json();
+  ok(svDel.status === 200 && (svList3.saved || []).length === 0, 'Bo luu tin thanh cong');
+
+  const tinyAv = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AvwEf/9k=';
+  const avPut = await fetch(BASE + '/api/me/avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tb }, body: JSON.stringify({ avatar: tinyAv }) });
+  ok(avPut.status === 200, 'Dat avatar thanh cong', '(HTTP ' + avPut.status + ')');
+  const usersNow = await (await fetch(BASE + '/api/users', { headers: { Authorization: 'Bearer ' + ta } })).json();
+  ok((usersNow.users || []).find((u) => u.username === newUser)?.avatar === tinyAv, 'Avatar moi xuat hien trong danh sach nguoi dung');
+  const avBad = await fetch(BASE + '/api/me/avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tb }, body: JSON.stringify({ avatar: 'khong-phai-anh' }) });
+  ok(avBad.status === 400, 'Avatar khong hop le bi tu choi', '(HTTP ' + avBad.status + ')');
+  await fetch(BASE + '/api/me/avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tb }, body: JSON.stringify({ avatar: null }) });
+  const usersNow2 = await (await fetch(BASE + '/api/users', { headers: { Authorization: 'Bearer ' + ta } })).json();
+  ok(!(usersNow2.users || []).find((u) => u.username === newUser)?.avatar, 'Go avatar thanh cong');
+
   // --- WebRTC signaling relay ---
   const incoming = waitEvent(B, 'call:incoming', (d) => d.from === 'admin', 8000, 'B nhan cuoc goi den');
   A.emit('call:offer', { to: newUser, offer: { type: 'offer', sdp: 'fake-sdp-offer' }, callType: 'voice' });
