@@ -1,11 +1,6 @@
 'use strict';
 /* Client dung Socket.IO do chinh server phat tai /socket.io/socket.io.js (khong dung package rieng, tranh lech phien ban) */
 const $ = (id) => document.getElementById(id);
-const ACCOUNTS = [
-  ['nguyen', 'Nguyễn Văn An', '123456'], ['lananh', 'Trần Lan Anh', '123456'],
-  ['minhduc', 'Lê Minh Đức', '123456'], ['phuongthao', 'Phạm Phương Thảo', '123456'],
-  ['hoangnam', 'Vũ Hoàng Nam', '123456'], ['admin', 'Quản trị viên', 'admin123'],
-];
 const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','😢','😭','😡','👍','👎','👏','🙏','💪','🔥','❤️','💔','🎉','🎂','🌹','☀️','🌧️','⭐','✅','❌','🎵','⚽','🍜','☕','🍺','🚗','✈️','🏠','💰','📱','💻','🎮','📚','😴','🤔','😅','🥰','😜','🫡','🤝','🫶','👋','👀','💯','🥳','😱','🤗','🙂','😉','😋','😇','🥹','🤠','👻','💩','🐶','🐱'];
 const STICKERS = ['❤️','🔥','👍','🎉','😂','🥰','💯','🌟','🍀','🎁','🏆','💪','🫶','🥳','🐻','🐰'];
 const GIFS = [
@@ -20,13 +15,6 @@ let me = null, socket = null, users = [], online = new Set();
 let currentPeer = null, unread = {}, lastMsg = {};
 const msgsCache = {};
 
-$('quickAccounts').innerHTML = ACCOUNTS.map(([u, n, p]) =>
-  `<button data-u="${u}" data-p="${p}"><b>${n}</b><br>${u} / ${p}</button>`).join('');
-$('quickAccounts').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  $('username').value = b.dataset.u; $('password').value = b.dataset.p;
-});
-
 $('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault(); $('loginError').textContent = '';
   try {
@@ -38,6 +26,20 @@ $('loginForm').addEventListener('submit', async (e) => {
   } catch (err) { $('loginError').textContent = err.message; }
 });
 $('logoutBtn').onclick = () => { localStorage.removeItem('token'); location.reload(); };
+
+/* Tao tai khoan moi - server luu tai khoan, tao xong dang nhap ngay */
+$('showRegister').onclick = (e) => { e.preventDefault(); $('loginForm').hidden = true; $('registerForm').hidden = false; };
+$('showLogin').onclick = (e) => { e.preventDefault(); $('registerForm').hidden = true; $('loginForm').hidden = false; };
+$('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); $('registerError').textContent = '';
+  try {
+    const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: $('regName').value, username: $('regUsername').value, password: $('regPassword').value }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Tạo tài khoản thất bại');
+    token = d.token; localStorage.setItem('token', token); me = d.user; enterApp();
+  } catch (err) { $('registerError').textContent = err.message; }
+});
 
 async function enterApp() {
   $('loginView').hidden = true; $('appView').hidden = false;
