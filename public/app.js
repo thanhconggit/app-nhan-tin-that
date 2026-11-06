@@ -110,7 +110,8 @@ $('registerForm').addEventListener('submit', async (e) => {
 async function enterApp() {
   $('loginView').hidden = true; $('appView').hidden = false;
   $('myName').textContent = me.displayName; $('myUser').textContent = '@' + me.username;
-  $('myAvatar').textContent = me.displayName[0];
+  setAvatarEl($('myAvatar'), me);
+  loadSaved();
   ensureAudio();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   const r = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + token } });
@@ -142,6 +143,16 @@ async function enterApp() {
     renderList(); ding();
     toast('Nhóm mới', `Bạn được thêm vào nhóm "${g.name}"`);
   });
+  socket.on('user:updated', (p) => {
+    if (p.username === me.username) {
+      me.avatar = p.avatar; setAvatarEl($('myAvatar'), me);
+    } else {
+      const u = users.find((x) => x.username === p.username);
+      if (u) { u.avatar = p.avatar; u.displayName = p.displayName || u.displayName; }
+      if (currentPeer === p.username) setAvatarEl($('peerAvatar'), userObj(p.username));
+    }
+    renderList();
+  });
   socket.on('typing', ({ from }) => { if (from === currentPeer) { $('typing').textContent = 'Đang nhập…'; setTimeout(() => $('typing').textContent = '', 1800); } });
   wireCallSocket();
   renderList();
@@ -165,6 +176,17 @@ function notify(title, body) {
 }
 
 function peerName(u) { return (users.find((x) => x.username === u) || {}).displayName || u; }
+function userObj(u) { return u === me?.username ? me : (users.find((x) => x.username === u) || { username: u, displayName: u, avatar: null }); }
+/* Gan anh dai dien (hoac chu cai dau) vao 1 the .avatar */
+function setAvatarEl(el, user) {
+  if (!el || !user) return;
+  el.classList.remove('gav');
+  if (user.avatar) {
+    el.innerHTML = '';
+    const img = document.createElement('img'); img.src = user.avatar; img.alt = '';
+    el.appendChild(img);
+  } else el.textContent = (user.displayName || user.username || '?')[0];
+}
 
 function renderList() {
   const q = $('search').value.toLowerCase();
@@ -185,7 +207,7 @@ function renderList() {
   h += `<div class="list-label">Mọi người</div>` + us.map((u) => {
     const on = online.has(u.username); const last = lastMsg['u:' + u.username];
     return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
-      <div class="avatar">${u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
+      <div class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
       <div class="info"><div><b>${u.displayName}</b></div>
       <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
       ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
@@ -209,9 +231,9 @@ async function openChat(peer) {
   showChatUI();
   $('groupDelBtn').hidden = true;
   $('voiceCallBtn').style.display = ''; $('videoCallBtn').style.display = '';
+  clearReply();
   $('peerName').textContent = peerName(peer);
-  $('peerAvatar').textContent = peerName(peer)[0];
-  $('peerAvatar').classList.remove('gav');
+  setAvatarEl($('peerAvatar'), userObj(peer));
   $('peerStatus').textContent = online.has(peer) ? 'Đang online' : 'Ngoại tuyến';
   renderList();
   const key = 'u:' + peer;
@@ -225,6 +247,7 @@ async function openChat(peer) {
 async function openGroup(id) {
   const g = groupById(id); if (!g) return;
   currentGroup = id; currentPeer = null; unread['g:' + id] = 0;
+  clearReply();
   showChatUI();
   $('voiceCallBtn').style.display = 'none'; $('videoCallBtn').style.display = 'none';
   $('peerName').textContent = g.name;
@@ -258,6 +281,17 @@ function renderMsg(m) {
     d.insertAdjacentHTML('beforeend', time);
     $('messages').appendChild(d);
     return;
+  }
+  if (m.forwarded) {
+    const f = document.createElement('div'); f.className = 'fwd-label'; f.textContent = '↪ Đã chia sẻ';
+    d.appendChild(f);
+  }
+  if (m.replyTo) {
+    const q = document.createElement('div'); q.className = 'quote'; q.dataset.qid = m.replyTo.id;
+    const qb = document.createElement('b'); qb.textContent = m.replyTo.from === me.username ? 'Bạn' : peerName(m.replyTo.from);
+    const qs = document.createElement('span'); qs.textContent = m.replyTo.preview;
+    q.appendChild(qb); q.appendChild(qs);
+    d.appendChild(q);
   }
   if (m.type === 'text') d.appendChild(document.createTextNode(m.content));
   else if (m.type === 'emoji') { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
@@ -340,11 +374,13 @@ function handleSent(msg) {
 function send(type, content) {
   const payload = currentGroup ? { groupId: currentGroup, type, content } : currentPeer ? { to: currentPeer, type, content } : null;
   if (!payload) return;
+  if (replyTarget && type !== 'call') payload.replyTo = replyTarget.id;
   socket.emit('message:send', payload, (res) => {
     if (res?.ok) {
       if (type === 'sticker') bumpUsage('sticker', content);
       else if (type === 'emoji') bumpUsage('emoji', content);
       else if (type === 'text') { for (const e of EMOJIS) if (content.includes(e)) bumpUsage('emoji', e); }
+      if (payload.replyTo) clearReply();
       handleSent(res.message);
     }
     else toast('Không gửi được', res?.error || 'Lỗi');
@@ -444,13 +480,154 @@ $('groupDelBtn').onclick = async () => {
   } catch (err) { toast('Không xoá được nhóm', err.message); }
 };
 
+/* ===== Tra loi (trich dan), Chia se, Luu tin, Ho so & Avatar ===== */
+let replyTarget = null;
+function setReply(m) {
+  replyTarget = m;
+  $('rbName').textContent = 'Trả lời ' + (m.from === me.username ? 'chính bạn' : peerName(m.from));
+  $('rbText').textContent = preview(m);
+  $('replyBar').hidden = false;
+  $('textInput').focus();
+}
+function clearReply() { replyTarget = null; const b = $('replyBar'); if (b) b.hidden = true; }
+$('rbCancel').onclick = clearReply;
+
+let forwardTarget = null;
+function openForwardPicker() {
+  const rows = [
+    ...groups.map((g) => `<button class="fwd-row" data-kind="group" data-id="${g.id}"><span class="avatar gav">👥</span><span>${escapeHtml(g.name)}</span></button>`),
+    ...users.map((u) => `<button class="fwd-row" data-kind="dm" data-u="${u.username}"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span><span>${escapeHtml(u.displayName)}</span></button>`),
+  ];
+  $('forwardList').innerHTML = rows.length ? rows.join('') : '<p class="muted">Chưa có ai để chia sẻ</p>';
+  $('forwardView').hidden = false;
+}
+$('forwardCancel').onclick = () => { $('forwardView').hidden = true; forwardTarget = null; };
+$('forwardList').addEventListener('click', (e) => {
+  const b = e.target.closest('.fwd-row'); if (!b || !forwardTarget) return;
+  const payload = b.dataset.kind === 'group' ? { groupId: b.dataset.id, forwardOf: forwardTarget.id } : { to: b.dataset.u, forwardOf: forwardTarget.id };
+  const label = b.textContent.trim();
+  socket.emit('message:send', payload, (res) => {
+    if (res?.ok) { handleSent(res.message); toast('Đã chia sẻ', 'Tới ' + label); }
+    else toast('Không chia sẻ được', res?.error || 'Lỗi');
+  });
+  $('forwardView').hidden = true; forwardTarget = null;
+});
+
+/* Tin da luu */
+let savedList = [], savedIds = new Set();
+async function loadSaved() {
+  try {
+    const r = await fetch('/api/saved', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) { savedList = (await r.json()).saved || []; savedIds = new Set(savedList.map((e) => e.msgId)); }
+  } catch { /* bo qua */ }
+}
+function savedContentHtml(s) {
+  if (s.type === 'text') return escapeHtml(s.content);
+  if (s.type === 'emoji') return `<span class="sv-big">${escapeHtml(s.content)}</span>`;
+  if (s.type === 'sticker') return String(s.content).startsWith('/stickers/') ? `<img class="sv-img" src="${s.content}" alt="Sticker">` : `<span class="sv-big">${escapeHtml(s.content)}</span>`;
+  if (s.type === 'gif' || s.type === 'image') return `<img class="sv-img" src="${s.content}" alt="">`;
+  if (s.type === 'audio') return '🎤 Tin nhắn thoại';
+  return escapeHtml(preview(s));
+}
+$('savedBtn').onclick = () => {
+  $('savedList').innerHTML = savedList.length ? savedList.map((e) => {
+    const s = e.snapshot;
+    const when = new Date(s.at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+    return `<div class="sv-item"><div class="sv-head"><b>${escapeHtml(s.from === me.username ? 'Bạn' : peerName(s.from))}</b><span class="muted">${when}</span><button class="sv-unsave" data-id="${e.msgId}">Bỏ lưu</button></div><div class="sv-body">${savedContentHtml(s)}</div></div>`;
+  }).join('') : '<p class="muted">Chưa có tin nhắn nào được lưu. Nhấn giữ một tin nhắn và chọn "Lưu tin nhắn".</p>';
+  $('savedView').hidden = false;
+};
+$('savedClose').onclick = () => { $('savedView').hidden = true; };
+$('savedList').addEventListener('click', async (e) => {
+  const b = e.target.closest('.sv-unsave'); if (!b) return;
+  const id = Number(b.dataset.id);
+  const r = await fetch('/api/saved/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  if (r.ok) { savedIds.delete(id); savedList = savedList.filter((x) => x.msgId !== id); $('savedBtn').click(); }
+});
+
+/* Ho so: bam avatar/ten cua minh, cua ban be, hoac tieu de nhom */
+let profileUser = null;
+function openProfileSelf() {
+  profileUser = null;
+  setAvatarEl($('pfAvatar'), me);
+  $('pfName').textContent = me.displayName;
+  $('pfSub').textContent = '@' + me.username;
+  $('pfStatus').textContent = 'Tài khoản của bạn';
+  $('pfMembers').innerHTML = '';
+  $('pfAvatarBtn').hidden = false;
+  $('pfRemoveAvatarBtn').hidden = !me.avatar;
+  $('pfCallBtn').hidden = true; $('pfVideoBtn').hidden = true;
+  $('profileView').hidden = false;
+}
+function openProfileUser(username) {
+  const u = userObj(username); profileUser = username;
+  setAvatarEl($('pfAvatar'), u);
+  $('pfName').textContent = u.displayName;
+  $('pfSub').textContent = '@' + u.username;
+  $('pfStatus').textContent = online.has(username) ? '🟢 Đang online' : '⚪ Ngoại tuyến';
+  $('pfMembers').innerHTML = '';
+  $('pfAvatarBtn').hidden = true; $('pfRemoveAvatarBtn').hidden = true;
+  $('pfCallBtn').hidden = false; $('pfVideoBtn').hidden = false;
+  $('profileView').hidden = false;
+}
+function openProfileGroup() {
+  const g = groupById(currentGroup); if (!g) return;
+  profileUser = null;
+  $('pfAvatar').classList.add('gav'); $('pfAvatar').textContent = '👥';
+  $('pfName').textContent = g.name;
+  $('pfSub').textContent = `Nhóm · ${g.members.length} thành viên`;
+  $('pfStatus').textContent = 'Người tạo: ' + (g.createdBy === me.username ? 'Bạn' : peerName(g.createdBy));
+  $('pfMembers').innerHTML = g.members.map((u) => `<div class="pf-member"><span class="avatar sm">${userObj(u).avatar ? `<img src="${userObj(u).avatar}" alt="">` : (u === me.username ? me.displayName[0] : peerName(u)[0])}</span><span>${u === me.username ? 'Bạn' : escapeHtml(peerName(u))}</span><span class="muted">@${u}</span></div>`).join('');
+  $('pfAvatarBtn').hidden = true; $('pfRemoveAvatarBtn').hidden = true;
+  $('pfCallBtn').hidden = true; $('pfVideoBtn').hidden = true;
+  $('profileView').hidden = false;
+}
+$('pfClose').onclick = () => { $('profileView').hidden = true; };
+$('myAvatar').onclick = openProfileSelf;
+document.querySelector('.me > div').onclick = openProfileSelf;
+$('peerAvatar').onclick = () => { if (currentGroup) openProfileGroup(); else if (currentPeer) openProfileUser(currentPeer); };
+$('peerName').onclick = () => { if (currentGroup) openProfileGroup(); else if (currentPeer) openProfileUser(currentPeer); };
+$('pfCallBtn').onclick = () => { $('profileView').hidden = true; if (profileUser && currentPeer !== profileUser) openChat(profileUser).then(() => $('voiceCallBtn').click()); else $('voiceCallBtn').click(); };
+$('pfVideoBtn').onclick = () => { $('profileView').hidden = true; if (profileUser && currentPeer !== profileUser) openChat(profileUser).then(() => $('videoCallBtn').click()); else $('videoCallBtn').click(); };
+$('pfAvatarBtn').onclick = () => $('avatarInput').click();
+$('avatarInput').addEventListener('change', () => {
+  const f = $('avatarInput').files[0]; $('avatarInput').value = ''; if (!f) return;
+  const img = new Image();
+  img.onload = async () => {
+    const side = Math.min(img.width, img.height);
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 128, 128);
+    const url = c.toDataURL('image/jpeg', 0.82);
+    URL.revokeObjectURL(img.src);
+    if (url.length > 195_000) { toast('Ảnh quá lớn', 'Hãy chọn ảnh khác nhỏ hơn'); return; }
+    try {
+      const r = await fetch('/api/me/avatar', { method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: url }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Đổi avatar thất bại');
+      me.avatar = url; setAvatarEl($('myAvatar'), me); setAvatarEl($('pfAvatar'), me);
+      $('pfRemoveAvatarBtn').hidden = false;
+      toast('Đã đổi ảnh đại diện', 'Mọi người sẽ thấy avatar mới của bạn');
+    } catch (err) { toast('Không đổi được avatar', err.message); }
+  };
+  img.src = URL.createObjectURL(f);
+});
+$('pfRemoveAvatarBtn').onclick = async () => {
+  const r = await fetch('/api/me/avatar', { method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: null }) });
+  if (r.ok) { me.avatar = null; setAvatarEl($('myAvatar'), me); setAvatarEl($('pfAvatar'), me); $('pfRemoveAvatarBtn').hidden = true; toast('Đã xoá ảnh đại diện', ''); }
+};
+
 /* ===== Menu tin nhan: tha cam xuc / thu hoi / xoa phia toi =====
    Mo bang: chuot phai (may tinh) hoac nhan giu (dien thoai) vao bong bong tin */
 let menuMsg = null;
 function openMsgMenu(m) {
   menuMsg = m;
-  $('mmRecall').hidden = !(m.from === me.username && m.type !== 'recalled' && m.type !== 'call');
-  $('mmReacts').style.display = m.type === 'recalled' ? 'none' : '';
+  const dead = m.type === 'recalled';
+  $('mmRecall').hidden = !(m.from === me.username && !dead && m.type !== 'call');
+  $('mmReacts').style.display = dead ? 'none' : '';
+  $('mmReply').hidden = dead || m.type === 'call';
+  $('mmForward').hidden = dead || m.type === 'call';
+  $('mmSave').hidden = dead || m.type === 'call';
+  $('mmSave').textContent = savedIds.has(m.id) ? '🔖 Bỏ lưu tin nhắn' : '🔖 Lưu tin nhắn';
   $('msgMenu').hidden = false;
 }
 function closeMsgMenu() { $('msgMenu').hidden = true; menuMsg = null; }
@@ -481,6 +658,15 @@ $('messages').addEventListener('click', (e) => {
     const m = el && findCurrentMsg(Number(el.dataset.id));
     const mine = m?.reactions?.[me.username];
     if (m && mine) reactTo(m, mine);
+    return;
+  }
+  const q = e.target.closest('.quote');
+  if (q) {
+    const orig = $('messages').querySelector(`.msg[data-id="${q.dataset.qid}"]`);
+    if (orig) {
+      orig.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      orig.classList.add('flash'); setTimeout(() => orig.classList.remove('flash'), 1300);
+    } else toast('Không thấy tin gốc', 'Tin gốc có thể đã bị thu hồi');
   }
 });
 $('msgMenu').addEventListener('click', (e) => { if (e.target === $('msgMenu')) closeMsgMenu(); });
@@ -506,6 +692,33 @@ $('mmRecall').onclick = () => {
     } else toast('Không thu hồi được', res?.error || 'Lỗi');
   });
 };
+$('mmReply').onclick = () => {
+  if (!menuMsg) return;
+  const target = menuMsg; closeMsgMenu();
+  setReply(target);
+};
+$('mmForward').onclick = () => {
+  if (!menuMsg) return;
+  forwardTarget = menuMsg; closeMsgMenu();
+  openForwardPicker();
+};
+$('mmSave').onclick = async () => {
+  if (!menuMsg) return;
+  const target = menuMsg; closeMsgMenu();
+  if (savedIds.has(target.id)) {
+    const r = await fetch('/api/saved/' + target.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) { savedIds.delete(target.id); savedList = savedList.filter((e) => e.msgId !== target.id); toast('Đã bỏ lưu', 'Tin nhắn đã gỡ khỏi mục Đã lưu'); }
+    else toast('Không bỏ lưu được', 'Thử lại sau');
+  } else {
+    try {
+      const r = await fetch('/api/saved', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ msgId: target.id }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Lưu thất bại');
+      savedIds.add(target.id); if (d.entry) savedList.unshift(d.entry);
+      toast('Đã lưu tin nhắn', 'Xem lại trong mục 🔖 Tin đã lưu');
+    } catch (err) { toast('Không lưu được', err.message); }
+  }
+};
 $('mmDelete').onclick = () => {
   if (!menuMsg) return;
   const target = menuMsg; closeMsgMenu();
@@ -518,10 +731,9 @@ $('mmDelete').onclick = () => {
   rerenderMessages(); renderList();
 };
 
-/* Gui anh: nen tren client, gioi han kich thuoc */
-$('photoBtn').onclick = () => $('photoInput').click();
-$('photoInput').addEventListener('change', () => {
-  const f = $('photoInput').files[0]; if (!f) return;
+/* Gui anh: nen tren client, gioi han kich thuoc. Dung chung cho chon file va DAN ANH tu clipboard (Ctrl+V) */
+function sendImageFile(f) {
+  if (!f) return;
   const img = new Image();
   img.onload = () => {
     const scale = Math.min(1, 1024 / Math.max(img.width, img.height));
@@ -531,7 +743,25 @@ $('photoInput').addEventListener('change', () => {
     if (url.length > 3_400_000) { toast('Ảnh quá lớn', 'Hãy chọn ảnh nhỏ hơn'); return; }
     send('image', url); URL.revokeObjectURL(img.src);
   };
-  img.src = URL.createObjectURL(f); $('photoInput').value = '';
+  img.src = URL.createObjectURL(f);
+}
+$('photoBtn').onclick = () => $('photoInput').click();
+$('photoInput').addEventListener('change', () => {
+  const f = $('photoInput').files[0]; $('photoInput').value = '';
+  sendImageFile(f);
+});
+/* Dan anh tu ben ngoai vao o nhan tin (copy anh o web/file roi Ctrl+V, tren dien thoai: nhan giu -> Dan) */
+$('textInput').addEventListener('paste', (e) => {
+  const items = (e.clipboardData || {}).items || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith('image/')) {
+      const f = it.getAsFile(); if (!f) continue;
+      e.preventDefault();
+      if (!currentPeer && !currentGroup) { toast('Chưa chọn cuộc trò chuyện', 'Mở một cuộc trò chuyện rồi dán ảnh'); return; }
+      sendImageFile(f);
+      return;
+    }
+  }
 });
 
 /* Tin nhan thoai: MediaRecorder, toi da 60 giay */
