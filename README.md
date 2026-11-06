@@ -162,3 +162,5 @@ Chưa kiểm chứng được:
 - Giao diện hiển thị trong trình duyệt thật (chưa mở bằng trình duyệt để nhìn).
 - Âm thanh/hình ảnh WebRTC thật giữa 2 thiết bị thật (mới kiểm chứng phần **chuyển tín hiệu gọi**, chưa kiểm chứng media).
 - Khả năng gọi qua các mạng cần TURN (xem giới hạn ở trên).
+
+<!-- Kiem chung ben vung du lieu: commit kich hoat deploy lai 06/11/2026 -->
