@@ -14,9 +14,11 @@ const STICKER_PACKS = [
   { name: '🐸 Ếch ngáo', files: Array.from({ length: 12 }, (_, i) => `/stickers/ech-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐷 Heo bựa', files: Array.from({ length: 12 }, (_, i) => `/stickers/heo-${String(i + 1).padStart(2, '0')}.png`) },
 ];
-/* GIF dong that tu Giphy CDN (URL da kiem chung song lau dai); anh nho 200.gif dung cho khay chon */
-const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi',
-'mlvseq9yvZhba','3oEjI6SIIHBdRxXI40','l0ExbnQXibVvkQtPy','26gsjCZpPolPr3sBy','xUPGcmCiereUQLaVi','3o7aCRUSTFuGBPvgzG','26AHONQ79FdWZhAI0','l0HlCqV35hdEg2HuE','3o6Zt481isNVuQI1l6','xT0GqssRweIhlz209y','l0MYt5jPR6QX5pnqM','26uf5HIqglRVIPmWA','3o85xtLX7zCyX3syvE','l3vRlT2k2L35Cnn3G','xTiTnxpQ3ghPiB2Hp6','1zSz5MVw4zKg','g9582DNuQppxC','dJGYF2NWE5VWg','KRbK6PyDzFzYc','9V8qyyGj3XtsI']
+/* GIF dong that tu Giphy CDN. Luu y: nhieu GIF bi Giphy xoa se tra anh "not available" du HTTP 200,
+   nen danh sach nay da kiem chung bang cach TAI THAT tung file (06/11/2026): dung noi dung that,
+   khong trung hash anh chet, du khung hinh. Anh nho 200.gif dung cho khay chon (thieu thi tu ve giphy.gif). */
+const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','111ebonMs90YLu','l4KihuqeuJEi9qLSM','mcJohbfGPATW8','13CoXDiaCcCoyk','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi','mlvseq9yvZhba','26gsjCZpPolPr3sBy','26AHONQ79FdWZhAI0','l0MYt5jPR6QX5pnqM','xTiTnxpQ3ghPiB2Hp6','g9582DNuQppxC',
+'03IoP34ByFpdRvT0wb','0T1tm4a0mrDXXJBO4g','0dKHpamGLycEt3Ffyg','0oIkdy76oYE8uPsPjy','10UHehEC098kAE','10UeedrT5MIfPG','10tIjpzIu8fe0','11s8zgtzOAep7mFUW8','11tTNkNy1SdXGg','12PIT4DOj6Tgek','12msOFU8oL1eww','13BwjdpxACoBPO','13hxeOYjoTWtK8','13t22jOjxpkAN2','14qb1Uhf40ndw4','18LZm8w9R8T0Q','1BQdjXovIqSLS','1BXa2alBjrCXC']
   .map((id) => `https://media.giphy.com/media/${id}/giphy.gif`);
 /* GIF dang the chu cua ban cu - chi de hien lai tin nhan cu cho dung */
 const LEGACY_GIFS = [
@@ -274,6 +276,7 @@ function renderMsg(m) {
   const reacts = m.reactions || {};
   const rKeys = Object.keys(reacts);
   if (rKeys.length) {
+    d.classList.add('has-reacts');
     const counts = {};
     for (const u of rKeys) counts[reacts[u]] = (counts[reacts[u]] || 0) + 1;
     const rd = document.createElement('div'); rd.className = 'reacts';
@@ -338,7 +341,11 @@ function send(type, content) {
   const payload = currentGroup ? { groupId: currentGroup, type, content } : currentPeer ? { to: currentPeer, type, content } : null;
   if (!payload) return;
   socket.emit('message:send', payload, (res) => {
-    if (res?.ok) handleSent(res.message);
+    if (res?.ok) {
+      if (type === 'sticker') bumpUsage('sticker', content);
+      else if (type === 'emoji') bumpUsage('emoji', content);
+      handleSent(res.message);
+    }
     else toast('Không gửi được', res?.error || 'Lỗi');
   });
 }
@@ -351,14 +358,34 @@ $('textInput').addEventListener('input', () => { if (currentPeer) socket.emit('t
 
 /* Panel emoji / sticker / GIF - 3 tab rieng */
 let panelTab = 'emoji';
+/* Dem so lan dung sticker/emoji tren may nay -> muc "Hay dung" len dau khay chon */
+function loadUsage(kind) {
+  try { return JSON.parse(localStorage.getItem('usage:' + kind + ':' + me.username) || '{}'); } catch { return {}; }
+}
+function bumpUsage(kind, key) {
+  if (!me) return;
+  const u = loadUsage(kind); u[key] = (u[key] || 0) + 1;
+  try { localStorage.setItem('usage:' + kind + ':' + me.username, JSON.stringify(u)); } catch { /* bo qua */ }
+}
+function topUsed(kind, n) {
+  return Object.entries(loadUsage(kind)).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+}
 function renderPanel() {
   const b = $('panelBody');
   document.querySelectorAll('.ptab').forEach((t) => t.classList.toggle('active', t.dataset.tab === panelTab));
-  if (panelTab === 'emoji') b.innerHTML = EMOJIS.map((e) => `<button data-k="emoji">${e}</button>`).join('');
-  else if (panelTab === 'sticker') b.innerHTML = STICKER_PACKS.map((p) =>
-    `<div class="pack-label">${p.name}</div>` +
-    p.files.map((f) => `<button class="stkpick" data-k="stickerimg" data-url="${f}"><img loading="lazy" src="${f}" alt="sticker"></button>`).join('')
-  ).join('');
+  if (panelTab === 'emoji') {
+    const fav = topUsed('emoji', 14);
+    b.innerHTML = (fav.length ? `<div class="pack-label">⭐ Hay dùng</div>` + fav.map((e) => `<button data-k="emoji">${e}</button>`).join('') + `<div class="pack-label">Tất cả emoji</div>` : '')
+      + EMOJIS.map((e) => `<button data-k="emoji">${e}</button>`).join('');
+  }
+  else if (panelTab === 'sticker') {
+    const fav = topUsed('sticker', 12).filter((f) => String(f).startsWith('/stickers/'));
+    b.innerHTML = (fav.length ? `<div class="pack-label">⭐ Hay dùng</div>` + fav.map((f) => `<button class="stkpick" data-k="stickerimg" data-url="${f}"><img loading="lazy" src="${f}" alt="sticker"></button>`).join('') : '')
+      + STICKER_PACKS.map((p) =>
+        `<div class="pack-label">${p.name}</div>` +
+        p.files.map((f) => `<button class="stkpick" data-k="stickerimg" data-url="${f}"><img loading="lazy" src="${f}" alt="sticker"></button>`).join('')
+      ).join('');
+  }
   else b.innerHTML = GIFS.map((u) => `<button class="gifpick" data-k="gif" data-url="${u}"><img class="gifthumb" loading="lazy" src="${u.replace('giphy.gif', '200.gif')}" onerror="this.onerror=null;this.src='${u}'" alt="GIF"></button>`).join('');
 }
 $('emojiBtn').onclick = () => {
