@@ -43,6 +43,7 @@
     </header>
     <input id="search" placeholder="Tìm người hoặc nhóm…">
     <button id="newGroupBtn">➕ Tạo nhóm</button>
+    <button id="savedBtn">🔖 Tin đã lưu</button>
     <div id="convList"></div>
   </aside>
 
@@ -59,6 +60,10 @@
       </header>
       <div id="messages"></div>
       <div id="typing" class="muted"></div>
+      <div id="replyBar" hidden>
+        <div class="rb-info"><b id="rbName"></b><span id="rbText"></span></div>
+        <button id="rbCancel" title="Huỷ trả lời">✕</button>
+      </div>
       <div id="panel" hidden>
         <div id="panelTabs">
           <button class="ptab active" data-tab="emoji">😀 Emoji</button>
@@ -130,9 +135,53 @@
       <button data-r="👍">👍</button>
       <button data-r="😡">😡</button>
     </div>
+    <button id="mmReply">💬 Trả lời tin nhắn</button>
+    <button id="mmForward">➡️ Chia sẻ</button>
+    <button id="mmSave">🔖 Lưu tin nhắn</button>
     <button id="mmRecall">↩️ Thu hồi tin nhắn</button>
     <button id="mmDelete">🗑️ Xoá phía tôi</button>
     <button id="mmClose">Đóng</button>
+  </div>
+</div>
+
+<!-- ===== Ho so (ca nhan / ban be / nhom) ===== -->
+<div id="profileView" hidden>
+  <div class="group-box profile-box">
+    <div class="avatar big-avatar" id="pfAvatar">?</div>
+    <h2 id="pfName"></h2>
+    <p class="muted" id="pfSub"></p>
+    <p class="muted" id="pfStatus"></p>
+    <div id="pfMembers"></div>
+    <div class="call-btns pf-btns">
+      <button id="pfAvatarBtn">🖼️ Đổi ảnh đại diện</button>
+      <button id="pfRemoveAvatarBtn">Xoá ảnh đại diện</button>
+      <button id="pfCallBtn">📞 Gọi thoại</button>
+      <button id="pfVideoBtn">🎥 Gọi video</button>
+      <button id="pfClose">Đóng</button>
+    </div>
+    <input type="file" id="avatarInput" accept="image/*" hidden>
+  </div>
+</div>
+
+<!-- ===== Chia se tin nhan ===== -->
+<div id="forwardView" hidden>
+  <div class="group-box">
+    <h2>Chia sẻ tới…</h2>
+    <div id="forwardList"></div>
+    <div class="call-btns">
+      <button id="forwardCancel">Huỷ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Tin nhan da luu ===== -->
+<div id="savedView" hidden>
+  <div class="group-box saved-box">
+    <h2>🔖 Tin nhắn đã lưu</h2>
+    <div id="savedList"></div>
+    <div class="call-btns">
+      <button id="savedClose">Đóng</button>
+    </div>
   </div>
 </div>
 
