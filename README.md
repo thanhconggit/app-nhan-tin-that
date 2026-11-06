@@ -20,9 +20,15 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
   (chỉ phù hợp chạy local). Hai bảng tự tạo lúc khởi động: `users`, `messages`.
 - Danh bạ / danh sách trò chuyện: trạng thái online thật từ server, badge chưa đọc,
   thông báo trình duyệt (Notification API) + toast trong app khi có tin nhắn mới lúc không mở cuộc trò chuyện đó.
+- **Tiếng thông báo:** "ding" khi có tin nhắn mới (khi đang không xem cuộc trò chuyện đó) và nhạc chuông
+  khi có cuộc gọi đến — tạo bằng WebAudio, không cần file âm thanh; nút 🔊/🔇 cạnh nút đăng xuất để tắt/bật.
 - Chat 1-1 thời gian thực qua Socket.IO; lịch sử tin nhắn lưu trên server (Postgres, hoặc file khi chạy local).
-- Gửi: tin nhắn chữ, ảnh (nén trên trình duyệt, giới hạn kích thước), emoji, sticker, GIF
-  (bộ GIF/sticker có sẵn trong app, không cần API key ngoài), tin nhắn thoại
+- **Chat nhóm:** nút "➕ Tạo nhóm" — đặt tên, chọn ít nhất 2 thành viên; nhóm hiện trong danh sách trò
+  chuyện của mọi thành viên (có thông báo ngay khi được thêm), tin nhắn nhóm hiện tên người gửi,
+  lịch sử nhóm lưu bền như tin 1-1 (bảng `groups` + cột `grp` trong `messages`), người ngoài nhóm bị chặn.
+  Gọi thoại/video chỉ hỗ trợ 1-1.
+- Gửi: tin nhắn chữ, ảnh (nén trên trình duyệt, giới hạn kích thước), emoji, sticker (bộ ~40),
+  GIF động thật từ Giphy CDN (chỉ lưu URL nên không tốn dung lượng database), tin nhắn thoại
   (ghi bằng MediaRecorder, tối đa 60 giây / 2MB, người nhận bấm phát lại được).
 - Gọi thoại + gọi video WebRTC thật: xem trước camera của mình, thấy hình/nghe tiếng của người kia,
   tắt mic / tắt camera, bấm giờ cuộc gọi, nghe / từ chối / kết thúc, và lưu một dòng lịch sử cuộc gọi vào khung chat.
