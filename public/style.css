@@ -100,6 +100,22 @@ button{touch-action:manipulation}
   .composer button{min-width:38px}
   .chat-head button{min-width:40px}
 }
+/* ===== Thu hoi, cam xuc tin nhan, menu tin nhan (them 06/11/2026) ===== */
+.msg{position:relative}
+.msg.recalled{background:#edf1f7;color:#8296ad;font-style:italic;box-shadow:none}
+.reacts{display:block;width:fit-content;background:#fff;border:1px solid #e3eaf6;border-radius:999px;padding:1px 8px;font-size:12.5px;line-height:1.5;margin-top:5px;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer}
+.msg.mine .reacts{background:#eaf1ff}
+#msgMenu{position:fixed;inset:0;background:rgba(11,21,38,.45);z-index:70;display:flex;align-items:flex-end;justify-content:center}
+.mm-sheet{background:#fff;width:min(430px,100vw);border-radius:16px 16px 0 0;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;box-shadow:0 -6px 30px rgba(0,0,0,.25)}
+#mmReacts{display:flex;justify-content:space-around;padding:2px 0 6px}
+#mmReacts button{font-size:28px;border:none;background:transparent;min-width:48px;min-height:48px;padding:4px}
+.mm-sheet>button{min-height:48px;font-size:15.5px;text-align:left;padding:10px 14px}
+#mmRecall{color:#d92d20;font-weight:600}
+#mmClose{text-align:center;color:#48607f}
+@media (min-width:761px){
+  #msgMenu{align-items:center}
+  .mm-sheet{border-radius:16px}
+}
 /* ===== Sticker anh that (them 06/11/2026) ===== */
 .msg.nobg{background:transparent;box-shadow:none;padding:2px}
 .msg.nobg .time{color:#6b7a90}
