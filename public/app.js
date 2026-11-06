@@ -7,9 +7,12 @@ const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','
 const STICKER_PACKS = [
   { name: '🐱 Mèo trắng', files: Array.from({ length: 12 }, (_, i) => `/stickers/meo-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐶 Shiba', files: Array.from({ length: 12 }, (_, i) => `/stickers/shiba-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐤 Gà vàng', files: Array.from({ length: 12 }, (_, i) => `/stickers/ga-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐰 Thỏ', files: Array.from({ length: 12 }, (_, i) => `/stickers/tho-${String(i + 1).padStart(2, '0')}.png`) },
 ];
 /* GIF dong that tu Giphy CDN (URL da kiem chung song lau dai); anh nho 200.gif dung cho khay chon */
-const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi']
+const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi',
+'mlvseq9yvZhba','3oEjI6SIIHBdRxXI40','l0ExbnQXibVvkQtPy','26gsjCZpPolPr3sBy','xUPGcmCiereUQLaVi','3o7aCRUSTFuGBPvgzG','26AHONQ79FdWZhAI0','l0HlCqV35hdEg2HuE','3o6Zt481isNVuQI1l6','xT0GqssRweIhlz209y','l0MYt5jPR6QX5pnqM','26uf5HIqglRVIPmWA','3o85xtLX7zCyX3syvE','l3vRlT2k2L35Cnn3G','xTiTnxpQ3ghPiB2Hp6','1zSz5MVw4zKg','g9582DNuQppxC','dJGYF2NWE5VWg','KRbK6PyDzFzYc','9V8qyyGj3XtsI']
   .map((id) => `https://media.giphy.com/media/${id}/giphy.gif`);
 /* GIF dang the chu cua ban cu - chi de hien lai tin nhan cu cho dung */
 const LEGACY_GIFS = [
@@ -23,6 +26,14 @@ let token = localStorage.getItem('token') || '';
 let me = null, socket = null, users = [], groups = [], online = new Set();
 let currentPeer = null, currentGroup = null, unread = {}, lastMsg = {};
 const msgsCache = {};
+/* Tin nhan da "xoa phia toi": chi an tren may nay, luu danh sach id trong localStorage */
+let deletedIds = new Set();
+function loadDeleted() {
+  try { deletedIds = new Set(JSON.parse(localStorage.getItem('deletedMsgs:' + me.username) || '[]')); } catch { deletedIds = new Set(); }
+}
+function saveDeleted() {
+  try { localStorage.setItem('deletedMsgs:' + me.username, JSON.stringify([...deletedIds].slice(-500))); } catch { /* bo qua */ }
+}
 const keyOf = (m) => (m.groupId ? 'g:' + m.groupId : 'u:' + (m.from === me.username ? m.to : m.from));
 const currentKey = () => (currentGroup ? 'g:' + currentGroup : currentPeer ? 'u:' + currentPeer : null);
 const groupById = (id) => groups.find((g) => g.id === id);
@@ -102,7 +113,24 @@ async function enterApp() {
   socket = io({ auth: { token } });
   socket.on('connect', () => socket.emit('presence:get'));
   socket.on('presence', ({ online: o }) => { online = new Set(o); renderList(); if (currentPeer) $('peerStatus').textContent = online.has(currentPeer) ? 'Đang online' : 'Ngoại tuyến'; });
+  loadDeleted();
   socket.on('message:new', onIncomingMessage);
+  socket.on('message:updated', (m) => {
+    const r = patchCachedMessage(m.id, { type: 'recalled', content: '', reactions: {} });
+    if (r.key) {
+      if (lastMsg[r.key]?.id === m.id) lastMsg[r.key] = r.msg;
+      if (r.key === currentKey()) rerenderMessages();
+      renderList();
+    }
+  });
+  socket.on('message:reacted', (p) => {
+    const r = patchCachedMessage(p.id, { reactions: p.reactions || {} });
+    if (r.key && r.key === currentKey()) rerenderMessages();
+  });
+  socket.on('group:deleted', ({ id, name }) => {
+    removeGroupLocal(id);
+    toast('Nhóm đã bị xoá', `Nhóm "${name}" đã bị người tạo xoá`);
+  });
   socket.on('group:created', (g) => {
     if (!groupById(g.id)) groups.push(g);
     renderList(); ding();
@@ -163,7 +191,7 @@ $('convList').addEventListener('click', (e) => {
   const c = e.target.closest('.conv'); if (!c) return;
   if (c.dataset.kind === 'group') openGroup(c.dataset.id); else openChat(c.dataset.u);
 });
-function preview(m) { if (m.type === 'sticker') return String(m.content).startsWith('/stickers/') ? '🎨 Sticker' : 'Sticker ' + m.content; return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', gif: '🎬 GIF', call: m.content })[m.type] || m.content; }
+function preview(m) { if (m.type === 'recalled') return '🚫 Tin nhắn đã thu hồi'; if (m.type === 'sticker') return String(m.content).startsWith('/stickers/') ? '🎨 Sticker' : 'Sticker ' + m.content; return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', gif: '🎬 GIF', call: m.content })[m.type] || m.content; }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 function showChatUI() {
@@ -173,6 +201,7 @@ function showChatUI() {
 async function openChat(peer) {
   currentPeer = peer; currentGroup = null; unread['u:' + peer] = 0;
   showChatUI();
+  $('groupDelBtn').hidden = true;
   $('voiceCallBtn').style.display = ''; $('videoCallBtn').style.display = '';
   $('peerName').textContent = peerName(peer);
   $('peerAvatar').textContent = peerName(peer)[0];
@@ -183,7 +212,7 @@ async function openChat(peer) {
   if (!msgsCache[key]) {
     const r = await fetch('/api/messages/' + peer, { headers: { Authorization: 'Bearer ' + token } });
     msgsCache[key] = (await r.json()).messages || [];
-    for (const m of msgsCache[key]) lastMsg[key] = m;
+    for (const m of msgsCache[key]) if (!deletedIds.has(m.id)) lastMsg[key] = m;
   }
   $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
 }
@@ -196,23 +225,33 @@ async function openGroup(id) {
   $('peerAvatar').textContent = '👥';
   $('peerAvatar').classList.add('gav');
   $('peerStatus').textContent = `${g.members.length} thành viên`;
+  $('groupDelBtn').hidden = g.createdBy !== me.username;
   renderList();
   const key = 'g:' + id;
   if (!msgsCache[key]) {
     const r = await fetch('/api/groups/' + id + '/messages', { headers: { Authorization: 'Bearer ' + token } });
     msgsCache[key] = (await r.json()).messages || [];
-    for (const m of msgsCache[key]) lastMsg[key] = m;
+    for (const m of msgsCache[key]) if (!deletedIds.has(m.id)) lastMsg[key] = m;
   }
   $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
 }
 $('backBtn').onclick = () => document.querySelector('#appView').classList.remove('chat-open');
 
 function renderMsg(m) {
+  if (deletedIds.has(m.id)) return;
   const d = document.createElement('div');
   d.className = 'msg' + (m.from === me.username ? ' mine' : '');
+  d.dataset.id = m.id;
   const time = `<div class="time">${new Date(m.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>`;
   if (m.groupId && m.from !== me.username) {
     const s = document.createElement('div'); s.className = 'sender-name'; s.textContent = peerName(m.from); d.appendChild(s);
+  }
+  if (m.type === 'recalled') {
+    d.classList.add('recalled');
+    d.appendChild(document.createTextNode('🚫 Tin nhắn đã thu hồi'));
+    d.insertAdjacentHTML('beforeend', time);
+    $('messages').appendChild(d);
+    return;
   }
   if (m.type === 'text') d.appendChild(document.createTextNode(m.content));
   else if (m.type === 'emoji') { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
@@ -228,10 +267,48 @@ function renderMsg(m) {
   else if (m.type === 'audio') { const a = document.createElement('audio'); a.controls = true; a.src = m.content; d.appendChild(a); }
   else if (m.type === 'call') d.appendChild(document.createTextNode('📞 ' + m.content));
   else d.appendChild(document.createTextNode(m.content));
+  const reacts = m.reactions || {};
+  const rKeys = Object.keys(reacts);
+  if (rKeys.length) {
+    const counts = {};
+    for (const u of rKeys) counts[reacts[u]] = (counts[reacts[u]] || 0) + 1;
+    const rd = document.createElement('div'); rd.className = 'reacts';
+    rd.textContent = Object.entries(counts).map(([e, c]) => (c > 1 ? `${e} ${c}` : e)).join(' ');
+    rd.title = rKeys.map((u) => `${u === me.username ? 'Bạn' : peerName(u)}: ${reacts[u]}`).join('\n');
+    d.appendChild(rd);
+  }
   d.insertAdjacentHTML('beforeend', time);
   $('messages').appendChild(d);
 }
 function scrollDown() { const b = $('messages'); b.scrollTop = b.scrollHeight; }
+
+/* Tim + sua 1 tin trong cache (dung cho thu hoi / cam xuc) */
+function patchCachedMessage(id, patch) {
+  for (const key of Object.keys(msgsCache)) {
+    const arr = msgsCache[key];
+    const i = arr.findIndex((x) => x.id === id);
+    if (i >= 0) { Object.assign(arr[i], patch); return { key, msg: arr[i] }; }
+  }
+  return {};
+}
+function rerenderMessages() {
+  const key = currentKey(); if (!key) return;
+  const box = $('messages');
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+  box.innerHTML = '';
+  (msgsCache[key] || []).forEach(renderMsg);
+  if (nearBottom) scrollDown();
+}
+function removeGroupLocal(id) {
+  groups = groups.filter((g) => g.id !== id);
+  delete msgsCache['g:' + id]; delete lastMsg['g:' + id]; delete unread['g:' + id];
+  if (currentGroup === id) {
+    currentGroup = null;
+    $('chatMain').hidden = true; $('emptyState').hidden = false;
+    document.querySelector('#appView').classList.remove('chat-open');
+  }
+  renderList();
+}
 
 function onIncomingMessage(m) {
   const key = keyOf(m);
@@ -278,7 +355,7 @@ function renderPanel() {
     `<div class="pack-label">${p.name}</div>` +
     p.files.map((f) => `<button class="stkpick" data-k="stickerimg" data-url="${f}"><img loading="lazy" src="${f}" alt="sticker"></button>`).join('')
   ).join('');
-  else b.innerHTML = GIFS.map((u) => `<button class="gifpick" data-k="gif" data-url="${u}"><img class="gifthumb" loading="lazy" src="${u.replace('giphy.gif', '200.gif')}" alt="GIF"></button>`).join('');
+  else b.innerHTML = GIFS.map((u) => `<button class="gifpick" data-k="gif" data-url="${u}"><img class="gifthumb" loading="lazy" src="${u.replace('giphy.gif', '200.gif')}" onerror="this.onerror=null;this.src='${u}'" alt="GIF"></button>`).join('');
 }
 $('emojiBtn').onclick = () => {
   const p = $('panel');
@@ -320,6 +397,93 @@ $('createGroupBtn').onclick = async () => {
     toast('Đã tạo nhóm', d.group.name);
     openGroup(d.group.id);
   } catch (err) { $('groupError').textContent = err.message; }
+};
+
+/* Xoa nhom (chi nguoi tao thay nut) */
+$('groupDelBtn').onclick = async () => {
+  const g = groupById(currentGroup); if (!g) return;
+  if (!confirm(`Xoá nhóm "${g.name}"?\nToàn bộ tin nhắn trong nhóm sẽ bị xoá đối với mọi thành viên. Hành động này không hoàn tác được.`)) return;
+  try {
+    const r = await fetch('/api/groups/' + g.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Xoá nhóm thất bại');
+    removeGroupLocal(g.id);
+    toast('Đã xoá nhóm', g.name);
+  } catch (err) { toast('Không xoá được nhóm', err.message); }
+};
+
+/* ===== Menu tin nhan: tha cam xuc / thu hoi / xoa phia toi =====
+   Mo bang: chuot phai (may tinh) hoac nhan giu (dien thoai) vao bong bong tin */
+let menuMsg = null;
+function openMsgMenu(m) {
+  menuMsg = m;
+  $('mmRecall').hidden = !(m.from === me.username && m.type !== 'recalled' && m.type !== 'call');
+  $('mmReacts').style.display = m.type === 'recalled' ? 'none' : '';
+  $('msgMenu').hidden = false;
+}
+function closeMsgMenu() { $('msgMenu').hidden = true; menuMsg = null; }
+function findCurrentMsg(id) {
+  const key = currentKey(); if (!key) return null;
+  return (msgsCache[key] || []).find((x) => x.id === id) || null;
+}
+$('messages').addEventListener('contextmenu', (e) => {
+  const el = e.target.closest('.msg'); if (!el) return;
+  e.preventDefault();
+  const m = findCurrentMsg(Number(el.dataset.id));
+  if (m) openMsgMenu(m);
+});
+let pressTimer = null;
+$('messages').addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.msg'); if (!el) return;
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    const m = findCurrentMsg(Number(el.dataset.id));
+    if (m) openMsgMenu(m);
+  }, 550);
+});
+['pointerup', 'pointermove', 'pointercancel'].forEach((ev) => $('messages').addEventListener(ev, () => clearTimeout(pressTimer)));
+$('messages').addEventListener('click', (e) => {
+  const pill = e.target.closest('.reacts');
+  if (pill) {
+    const el = e.target.closest('.msg');
+    const m = el && findCurrentMsg(Number(el.dataset.id));
+    const mine = m?.reactions?.[me.username];
+    if (m && mine) reactTo(m, mine);
+  }
+});
+$('msgMenu').addEventListener('click', (e) => { if (e.target === $('msgMenu')) closeMsgMenu(); });
+$('mmClose').onclick = closeMsgMenu;
+$('mmReacts').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-r]'); if (!b || !menuMsg) return;
+  reactTo(menuMsg, b.dataset.r);
+  closeMsgMenu();
+});
+function reactTo(m, emoji) {
+  socket.emit('message:react', { id: m.id, emoji }, (res) => {
+    if (res?.ok) { patchCachedMessage(m.id, { reactions: res.reactions }); rerenderMessages(); }
+    else toast('Không thả được cảm xúc', res?.error || 'Lỗi');
+  });
+}
+$('mmRecall').onclick = () => {
+  if (!menuMsg) return;
+  const target = menuMsg; closeMsgMenu();
+  socket.emit('message:recall', { id: target.id }, (res) => {
+    if (res?.ok) {
+      const r = patchCachedMessage(target.id, { type: 'recalled', content: '', reactions: {} });
+      if (r.key) { if (lastMsg[r.key]?.id === target.id) lastMsg[r.key] = r.msg; rerenderMessages(); renderList(); }
+    } else toast('Không thu hồi được', res?.error || 'Lỗi');
+  });
+};
+$('mmDelete').onclick = () => {
+  if (!menuMsg) return;
+  const target = menuMsg; closeMsgMenu();
+  deletedIds.add(target.id); saveDeleted();
+  const key = currentKey();
+  if (key && lastMsg[key]?.id === target.id) {
+    const rest = (msgsCache[key] || []).filter((x) => !deletedIds.has(x.id));
+    lastMsg[key] = rest[rest.length - 1];
+  }
+  rerenderMessages(); renderList();
 };
 
 /* Gui anh: nen tren client, gioi han kich thuoc */
