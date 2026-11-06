@@ -344,6 +344,7 @@ function send(type, content) {
     if (res?.ok) {
       if (type === 'sticker') bumpUsage('sticker', content);
       else if (type === 'emoji') bumpUsage('emoji', content);
+      else if (type === 'text') { for (const e of EMOJIS) if (content.includes(e)) bumpUsage('emoji', e); }
       handleSent(res.message);
     }
     else toast('Không gửi được', res?.error || 'Lỗi');
@@ -399,7 +400,7 @@ $('panelTabs').addEventListener('click', (e) => {
 });
 $('panelBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.k === 'emoji') { $('textInput').value += b.textContent; $('textInput').focus(); }
+  if (b.dataset.k === 'emoji') { bumpUsage('emoji', b.textContent); $('textInput').value += b.textContent; $('textInput').focus(); }
   if (b.dataset.k === 'stickerimg') send('sticker', b.dataset.url);
   if (b.dataset.k === 'gif') send('gif', b.dataset.url);
 });
