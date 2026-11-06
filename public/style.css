@@ -103,8 +103,9 @@ button{touch-action:manipulation}
 /* ===== Thu hoi, cam xuc tin nhan, menu tin nhan (them 06/11/2026) ===== */
 .msg{position:relative}
 .msg.recalled{background:#edf1f7;color:#8296ad;font-style:italic;box-shadow:none}
-.reacts{display:block;width:fit-content;background:#fff;border:1px solid #e3eaf6;border-radius:999px;padding:1px 8px;font-size:12.5px;line-height:1.5;margin-top:5px;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer}
+.reacts{position:absolute;right:6px;bottom:-11px;z-index:2;width:fit-content;background:#fff;border:1px solid #e3eaf6;border-radius:999px;padding:1px 8px;font-size:12.5px;line-height:1.5;box-shadow:0 1px 4px rgba(0,0,0,.16);cursor:pointer;white-space:nowrap}
 .msg.mine .reacts{background:#eaf1ff}
+.msg.has-reacts{margin-bottom:13px}
 #msgMenu{position:fixed;inset:0;background:rgba(11,21,38,.45);z-index:70;display:flex;align-items:flex-end;justify-content:center}
 .mm-sheet{background:#fff;width:min(430px,100vw);border-radius:16px 16px 0 0;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;box-shadow:0 -6px 30px rgba(0,0,0,.25)}
 #mmReacts{display:flex;justify-content:space-around;padding:2px 0 6px}
