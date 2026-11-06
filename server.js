@@ -28,6 +28,8 @@ const DATA_DIR = path.join(__dirname, 'data');
 const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const USER_FILE = path.join(DATA_DIR, 'users.json');
 const GROUP_FILE = path.join(DATA_DIR, 'groups.json');
+const AVATAR_FILE = path.join(DATA_DIR, 'avatars.json');
+const SAVED_FILE = path.join(DATA_DIR, 'saved.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Danh sach tai khoan da dang ky can XOA khoi noi luu tru khi khoi dong,
@@ -39,10 +41,29 @@ let messages = [];
 let registeredUsers = [];
 let groups = [];
 let groupSeq = 0;
+let avatars = new Map();       // username -> data URL anh dai dien
+let savedByUser = new Map();   // username -> [{msgId, snapshot, at}] (moi nhat dung dau mang khi tra ve API)
 const publicGroup = (g) => ({ id: g.id, name: g.name, members: g.members, createdBy: g.createdBy, at: g.at });
 function safeParseReactions(s) { try { const o = JSON.parse(s || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
+function safeParseExtra(s) {
+  try { const o = JSON.parse(s || '{}'); return { replyTo: o && o.replyTo ? o.replyTo : null, forwarded: !!(o && o.forwarded) }; }
+  catch { return { replyTo: null, forwarded: false }; }
+}
+/* Ban xem truoc cua 1 tin de lam trich dan (tra loi) hoac hien trong muc Da luu */
+function msgPreviewOf(m) {
+  if (!m || m.type === 'recalled') return 'Tin nhắn đã thu hồi';
+  if (m.type === 'text' || m.type === 'emoji') return String(m.content || '').slice(0, 90);
+  return ({ sticker: '🎨 Sticker', gif: '🎬 GIF', image: '🖼️ Hình ảnh', audio: '🎤 Tin nhắn thoại', call: '📞 ' + (m.content || 'Cuộc gọi') })[m.type] || 'Tin nhắn';
+}
+function replySnapshot(src) { return { id: src.id, from: src.from, type: src.type, preview: msgPreviewOf(src) }; }
+/* Nguoi dung co quyen xem tin nay khong (1-1: la 1 trong 2 phia; nhom: la thanh vien) */
+function canAccessMessage(m, username) {
+  if (!m) return false;
+  if (m.groupId) { const g = groups.find((x) => x.id === m.groupId); return !!(g && g.members.includes(username)); }
+  return m.from === username || m.to === username;
+}
 const userByName = new Map(USERS.map((u) => [u.username, u]));
-const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
+const publicUser = (u) => ({ username: u.username, displayName: u.displayName, avatar: avatars.get(u.username) || null });
 let seq = 0;
 
 let saveTimer = null;
@@ -68,8 +89,8 @@ function updateStoredMessage(msg) {
 function persist(msg) {
   if (pool) {
     pool.query(
-      'INSERT INTO messages(id, sender, recipient, type, content, at, grp, reactions) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING',
-      [msg.id, msg.from, msg.to || '', msg.type, msg.content, msg.at, msg.groupId || null, JSON.stringify(msg.reactions || {})]
+      'INSERT INTO messages(id, sender, recipient, type, content, at, grp, reactions, extra) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING',
+      [msg.id, msg.from, msg.to || '', msg.type, msg.content, msg.at, msg.groupId || null, JSON.stringify(msg.reactions || {}), JSON.stringify({ replyTo: msg.replyTo || null, forwarded: !!msg.forwarded })]
     ).catch((e) => console.error('Luu tin nhan (DB) loi:', e.message));
     return;
   }
@@ -90,6 +111,36 @@ function saveGroup(g) {
   try { fs.writeFileSync(GROUP_FILE, JSON.stringify(groups)); } catch (e) { console.error('Luu nhom loi:', e.message); }
 }
 
+function persistAvatarsFile() {
+  try { fs.writeFileSync(AVATAR_FILE, JSON.stringify([...avatars.entries()])); } catch (e) { console.error('Luu avatar loi:', e.message); }
+}
+function persistSavedFile() {
+  try { fs.writeFileSync(SAVED_FILE, JSON.stringify([...savedByUser.entries()])); } catch (e) { console.error('Luu tin da luu loi:', e.message); }
+}
+function saveAvatar(username, dataUrl) {
+  if (pool) {
+    if (dataUrl) pool.query('INSERT INTO avatars(username, avatar) VALUES($1,$2) ON CONFLICT (username) DO UPDATE SET avatar=EXCLUDED.avatar', [username, dataUrl]).catch((e) => console.error('Luu avatar (DB) loi:', e.message));
+    else pool.query('DELETE FROM avatars WHERE username=$1', [username]).catch((e) => console.error('Xoa avatar (DB) loi:', e.message));
+    return;
+  }
+  persistAvatarsFile();
+}
+function storeSaved(username, entry) {
+  if (pool) {
+    pool.query('INSERT INTO saved_messages(username, msg_id, snapshot, at) VALUES($1,$2,$3,$4) ON CONFLICT (username, msg_id) DO NOTHING',
+      [username, entry.msgId, JSON.stringify(entry.snapshot), entry.at]).catch((e) => console.error('Luu tin (DB) loi:', e.message));
+    return;
+  }
+  persistSavedFile();
+}
+function removeSaved(username, msgId) {
+  if (pool) {
+    pool.query('DELETE FROM saved_messages WHERE username=$1 AND msg_id=$2', [username, msgId]).catch((e) => console.error('Xoa tin da luu (DB) loi:', e.message));
+    return;
+  }
+  persistSavedFile();
+}
+
 function saveUser(u) {
   if (pool) {
     pool.query(
@@ -104,10 +155,13 @@ function saveUser(u) {
 async function initStorage() {
   if (pool) {
     await pool.query('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL)');
-    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL, grp TEXT, reactions TEXT)');
+    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL, grp TEXT, reactions TEXT, extra TEXT)');
     await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS grp TEXT');
     await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT');
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS extra TEXT');
     await pool.query('CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created_by TEXT NOT NULL, at BIGINT NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS avatars(username TEXT PRIMARY KEY, avatar TEXT NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS saved_messages(username TEXT NOT NULL, msg_id BIGINT NOT NULL, snapshot TEXT NOT NULL, at BIGINT NOT NULL, PRIMARY KEY(username, msg_id))');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
     if (REMOVE_USERS.length) {
@@ -118,14 +172,28 @@ async function initStorage() {
         console.log(`[DB] Da xoa ${before - registeredUsers.length} tai khoan theo REMOVE_USERS: ${REMOVE_USERS.join(', ')}`);
       }
     }
-    const rm = await pool.query('SELECT id, sender, recipient, type, content, at, grp, reactions FROM messages ORDER BY id ASC');
-    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient || undefined, type: r.type, content: r.content, at: Number(r.at), reactions: safeParseReactions(r.reactions), ...(r.grp ? { groupId: r.grp } : {}) }));
+    const rm = await pool.query('SELECT id, sender, recipient, type, content, at, grp, reactions, extra FROM messages ORDER BY id ASC');
+    messages = rm.rows.map((r) => {
+      const ex = safeParseExtra(r.extra);
+      return { id: Number(r.id), from: r.sender, to: r.recipient || undefined, type: r.type, content: r.content, at: Number(r.at), reactions: safeParseReactions(r.reactions), ...(r.grp ? { groupId: r.grp } : {}), ...(ex.replyTo ? { replyTo: ex.replyTo } : {}), ...(ex.forwarded ? { forwarded: true } : {}) };
+    });
     const rg = await pool.query('SELECT id, name, members, created_by, at FROM groups ORDER BY at ASC');
     groups = rg.rows.map((r) => ({ id: r.id, name: r.name, members: JSON.parse(r.members), createdBy: r.created_by, at: Number(r.at) }));
+    const rav = await pool.query('SELECT username, avatar FROM avatars');
+    avatars = new Map(rav.rows.map((r) => [r.username, r.avatar]));
+    const rsv = await pool.query('SELECT username, msg_id, snapshot, at FROM saved_messages ORDER BY at ASC');
+    savedByUser = new Map();
+    for (const r of rsv.rows) {
+      if (!savedByUser.has(r.username)) savedByUser.set(r.username, []);
+      let snap = {}; try { snap = JSON.parse(r.snapshot); } catch { /* bo qua */ }
+      savedByUser.get(r.username).push({ msgId: Number(r.msg_id), snapshot: snap, at: Number(r.at) });
+    }
     console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky, ${messages.length} tin nhan va ${groups.length} nhom tu Postgres`);
   } else {
     try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
     try { if (fs.existsSync(GROUP_FILE)) groups = JSON.parse(fs.readFileSync(GROUP_FILE, 'utf8')); if (!Array.isArray(groups)) groups = []; } catch { groups = []; }
+    try { if (fs.existsSync(AVATAR_FILE)) avatars = new Map(JSON.parse(fs.readFileSync(AVATAR_FILE, 'utf8'))); } catch { avatars = new Map(); }
+    try { if (fs.existsSync(SAVED_FILE)) savedByUser = new Map(JSON.parse(fs.readFileSync(SAVED_FILE, 'utf8'))); } catch { savedByUser = new Map(); }
     try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
     if (REMOVE_USERS.length) {
       const before = registeredUsers.length;
@@ -185,6 +253,57 @@ app.post('/api/register', (req, res) => {
 });
 
 app.get('/api/me', authRest, (req, res) => res.json({ user: publicUser(userByName.get(req.username)) }));
+
+/* Doi avatar: gui data URL anh (client nen nho ~128px, toi da 200KB); gui avatar rong/null de xoa */
+app.put('/api/me/avatar', authRest, (req, res) => {
+  const avatar = (req.body || {}).avatar;
+  if (avatar === null || avatar === '') {
+    avatars.delete(req.username);
+    saveAvatar(req.username, null);
+    io.emit('user:updated', { username: req.username, avatar: null, displayName: userByName.get(req.username).displayName });
+    return res.json({ ok: true, avatar: null });
+  }
+  if (typeof avatar !== 'string' || !avatar.startsWith('data:image/') || avatar.length > 200_000) {
+    return res.status(400).json({ error: 'Avatar khong hop le (can anh nho duoi 200KB)' });
+  }
+  avatars.set(req.username, avatar);
+  saveAvatar(req.username, avatar);
+  io.emit('user:updated', { username: req.username, avatar, displayName: userByName.get(req.username).displayName });
+  res.json({ ok: true, avatar });
+});
+
+/* ===== Tin nhan da luu (bookmark ca nhan, luu ban chup noi dung) ===== */
+app.get('/api/saved', authRest, (req, res) => {
+  const list = (savedByUser.get(req.username) || []).slice().sort((a, b) => b.at - a.at);
+  res.json({ saved: list });
+});
+
+app.post('/api/saved', authRest, (req, res) => {
+  const msgId = Number((req.body || {}).msgId);
+  const msg = messages.find((m) => m.id === msgId);
+  if (!msg || !canAccessMessage(msg, req.username)) return res.status(404).json({ error: 'Khong tim thay tin nhan' });
+  if (msg.type === 'recalled') return res.status(400).json({ error: 'Tin da thu hoi, khong luu duoc' });
+  const list = savedByUser.get(req.username) || [];
+  const existing = list.find((e) => e.msgId === msgId);
+  if (existing) return res.json({ ok: true, entry: existing });
+  if (list.length >= 200) return res.status(400).json({ error: 'Da luu toi da 200 tin' });
+  const snapshot = { id: msg.id, from: msg.from, to: msg.to, groupId: msg.groupId, type: msg.type, content: msg.content, at: msg.at };
+  const entry = { msgId, snapshot, at: Date.now() };
+  list.push(entry);
+  savedByUser.set(req.username, list);
+  storeSaved(req.username, entry);
+  res.status(201).json({ ok: true, entry });
+});
+
+app.delete('/api/saved/:msgId', authRest, (req, res) => {
+  const msgId = Number(req.params.msgId);
+  const list = savedByUser.get(req.username) || [];
+  const next = list.filter((e) => e.msgId !== msgId);
+  if (next.length === list.length) return res.status(404).json({ error: 'Khong tim thay tin da luu' });
+  savedByUser.set(req.username, next);
+  removeSaved(req.username, msgId);
+  res.json({ ok: true });
+});
 
 app.get('/api/users', authRest, (req, res) => {
   res.json({ users: [...userByName.values()].map(publicUser), online: [...onlineUsers()] });
@@ -287,15 +406,33 @@ io.on('connection', (socket) => {
   broadcastPresence();
 
   socket.on('message:send', (payload, ack) => {
-    const { to, groupId, type, content } = payload || {};
+    const { to, groupId, replyTo, forwardOf } = payload || {};
+    let { type, content } = payload || {};
+    let forwarded = false;
+    /* Chia se tin nhan: server tu sao chep noi dung tu tin goc (khong tin noi dung client gui len) */
+    if (forwardOf != null) {
+      const src = messages.find((m) => m.id === Number(forwardOf));
+      if (!src || !canAccessMessage(src, me)) return ack?.({ ok: false, error: 'Khong tim thay tin goc' });
+      if (src.type === 'recalled' || src.type === 'call') return ack?.({ ok: false, error: 'Khong the chia se tin nay' });
+      type = src.type; content = src.content; forwarded = true;
+    }
     if (!ALLOWED_TYPES.has(type)) return ack?.({ ok: false, error: 'Loai tin nhan khong hop le' });
     if (typeof content !== 'string' || content.length === 0) return ack?.({ ok: false, error: 'Noi dung rong' });
     if ((type === 'image' || type === 'audio') && content.length > MAX_DATA_URL) return ack?.({ ok: false, error: 'File qua lon' });
     if (type !== 'image' && type !== 'audio' && content.length > 4000) return ack?.({ ok: false, error: 'Noi dung qua dai' });
+    /* Trich dan tra loi: chi chap nhan tin thuoc cung cuoc tro chuyen, sai thi bo qua trich dan (van gui tin) */
+    let replySnap;
+    if (!forwarded && replyTo != null) {
+      const src = messages.find((m) => m.id === Number(replyTo));
+      if (src && src.type !== 'call') {
+        const sameConv = groupId ? src.groupId === groupId : (!src.groupId && ((src.from === me && src.to === to) || (src.from === to && src.to === me)));
+        if (sameConv) replySnap = replySnapshot(src);
+      }
+    }
     if (groupId) {
       const g = groups.find((x) => x.id === groupId);
       if (!g || !g.members.includes(me)) return ack?.({ ok: false, error: 'Nhom khong hop le' });
-      const msg = { id: ++seq, from: me, groupId, type, content, at: Date.now(), reactions: {} };
+      const msg = { id: ++seq, from: me, groupId, type, content, at: Date.now(), reactions: {}, ...(replySnap ? { replyTo: replySnap } : {}), ...(forwarded ? { forwarded: true } : {}) };
       messages.push(msg);
       if (messages.length > 5000) messages = messages.slice(-5000);
       persist(msg);
@@ -303,7 +440,7 @@ io.on('connection', (socket) => {
       return ack?.({ ok: true, message: msg });
     }
     if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
-    const msg = { id: ++seq, from: me, to, type, content, at: Date.now(), reactions: {} };
+    const msg = { id: ++seq, from: me, to, type, content, at: Date.now(), reactions: {}, ...(replySnap ? { replyTo: replySnap } : {}), ...(forwarded ? { forwarded: true } : {}) };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
     persist(msg);
