@@ -27,6 +27,14 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
   chuyện của mọi thành viên (có thông báo ngay khi được thêm), tin nhắn nhóm hiện tên người gửi,
   lịch sử nhóm lưu bền như tin 1-1 (bảng `groups` + cột `grp` trong `messages`), người ngoài nhóm bị chặn.
   Gọi thoại/video chỉ hỗ trợ 1-1.
+- **Dán ảnh từ clipboard** vào ô nhắn tin (Ctrl+V trên máy tính, hoặc nhấn giữ → Dán trên điện thoại sau khi copy ảnh).
+- **Hồ sơ & avatar**: bấm vào avatar/tên của mình để xem hồ sơ cá nhân và **đổi ảnh đại diện** (ảnh nén
+  128px, lưu bền trên server, mọi người thấy ngay); bấm avatar/tên người đang chat để xem thông tin của họ
+  (trạng thái online, gọi nhanh); bấm tiêu đề nhóm để xem thông tin nhóm và danh sách thành viên.
+- **Trả lời, chia sẻ, lưu tin** (trong menu nhấn giữ tin nhắn): **Trả lời** kèm trích dẫn (bấm vào trích dẫn
+  để nhảy tới tin gốc), **Chia sẻ** chuyển tiếp tin tới người/nhóm khác (có nhãn "Đã chia sẻ", server tự sao
+  chép nội dung), **Lưu tin nhắn** vào mục 🔖 Tin đã lưu riêng của bạn (lưu bản chụp nội dung, xem lại/bỏ lưu
+  bất cứ lúc nào, tối đa 200 tin).
 - **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
   thả cảm xúc ❤️ 😂 😮 😢 👍 😡 (bấm lại để gỡ, cảm xúc lưu bền trên server), **thu hồi tin nhắn**
   của mình (cả hai phía đều thấy "Tin nhắn đã thu hồi"), và **xoá phía tôi** (chỉ ẩn trên máy mình,
