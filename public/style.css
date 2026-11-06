@@ -50,3 +50,4 @@ input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;wi
 .toast{background:#17233b;color:#fff;padding:11px 14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:300px}
 @media(max-width:760px){#sidebar{width:100%}#chatPane{display:none}#appView.chat-open #sidebar{display:none}#appView.chat-open #chatPane{display:flex}}
 @media(min-width:761px){#backBtn{display:none}}
+[hidden]{display:none!important}
