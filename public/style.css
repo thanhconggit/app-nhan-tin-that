@@ -100,6 +100,18 @@ button{touch-action:manipulation}
   .composer button{min-width:38px}
   .chat-head button{min-width:40px}
 }
+/* ===== Sticker anh that (them 06/11/2026) ===== */
+.msg.nobg{background:transparent;box-shadow:none;padding:2px}
+.msg.nobg .time{color:#6b7a90}
+.msg img.stickerimg{width:118px;height:118px;object-fit:contain;display:block}
+.pack-label{width:100%;font-size:13px;font-weight:700;color:#48607f;padding:4px 2px 0}
+#panelBody button.stkpick{padding:3px;line-height:0;background:transparent;border-color:transparent}
+#panelBody button.stkpick:hover{background:#eaf1ff}
+#panelBody button.stkpick img{width:64px;height:64px;object-fit:contain;display:block}
+@media (max-width:760px){
+  .msg img.stickerimg{width:104px;height:104px}
+  #panelBody button.stkpick img{width:58px;height:58px}
+}
 /* ===== Nhom, tieng thong bao, sticker/GIF that (them 06/11/2026) ===== */
 #newGroupBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#eaf1ff;border-color:#c9d6ee;font-weight:600;color:#0050c8}
 .list-label{padding:10px 12px 4px;font-size:12px;font-weight:700;color:#6b7a90;text-transform:uppercase;letter-spacing:.4px}
