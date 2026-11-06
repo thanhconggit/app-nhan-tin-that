@@ -2,7 +2,12 @@
 /* Client dung Socket.IO do chinh server phat tai /socket.io/socket.io.js (khong dung package rieng, tranh lech phien ban) */
 const $ = (id) => document.getElementById(id);
 const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','😢','😭','😡','👍','👎','👏','🙏','💪','🔥','❤️','💔','🎉','🎂','🌹','☀️','🌧️','⭐','✅','❌','🎵','⚽','🍜','☕','🍺','🚗','✈️','🏠','💰','📱','💻','🎮','📚','😴','🤔','😅','🥰','😜','🫡','🤝','🫶','👋','👀','💯','🥳','😱','🤗','🙂','😉','😋','😇','🥹','🤠','👻','💩','🐶','🐱'];
-const STICKERS = ['❤️','🔥','👍','🎉','😂','🥰','💯','🌟','🍀','🎁','🏆','💪','🫶','🥳','🐻','🐰','🐶','🐱','🦊','🐷','🌹','🌈','🍕','🍜','☕','🎂','⚽','🎮','🚗','✈️','💤','🤙','👏','🙏','👋','🫡','🤝','💸','😴','🤗','😘','😍','🤣','👻'];
+/* Sticker anh that (PNG nen trong suot, phuc vu tu /stickers/) - 2 bo: Meo trang + Shiba.
+   Sticker gui di chi luu duong dan anh nen khong ton dung luong database. */
+const STICKER_PACKS = [
+  { name: '🐱 Mèo trắng', files: Array.from({ length: 12 }, (_, i) => `/stickers/meo-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐶 Shiba', files: Array.from({ length: 12 }, (_, i) => `/stickers/shiba-${String(i + 1).padStart(2, '0')}.png`) },
+];
 /* GIF dong that tu Giphy CDN (URL da kiem chung song lau dai); anh nho 200.gif dung cho khay chon */
 const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi']
   .map((id) => `https://media.giphy.com/media/${id}/giphy.gif`);
@@ -158,7 +163,7 @@ $('convList').addEventListener('click', (e) => {
   const c = e.target.closest('.conv'); if (!c) return;
   if (c.dataset.kind === 'group') openGroup(c.dataset.id); else openChat(c.dataset.u);
 });
-function preview(m) { return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', sticker: 'Sticker ' + m.content, gif: '🎬 GIF', call: m.content })[m.type] || m.content; }
+function preview(m) { if (m.type === 'sticker') return String(m.content).startsWith('/stickers/') ? '🎨 Sticker' : 'Sticker ' + m.content; return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', gif: '🎬 GIF', call: m.content })[m.type] || m.content; }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 function showChatUI() {
@@ -210,7 +215,11 @@ function renderMsg(m) {
     const s = document.createElement('div'); s.className = 'sender-name'; s.textContent = peerName(m.from); d.appendChild(s);
   }
   if (m.type === 'text') d.appendChild(document.createTextNode(m.content));
-  else if (m.type === 'emoji' || m.type === 'sticker') { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
+  else if (m.type === 'emoji') { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
+  else if (m.type === 'sticker') {
+    if (String(m.content).startsWith('/stickers/')) { d.classList.add('nobg'); const img = document.createElement('img'); img.className = 'stickerimg'; img.src = m.content; img.alt = 'Sticker'; d.appendChild(img); }
+    else { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
+  }
   else if (m.type === 'gif') {
     if (String(m.content).startsWith('http')) { const img = document.createElement('img'); img.className = 'photo'; img.src = m.content; img.alt = 'GIF'; d.appendChild(img); }
     else { const g = LEGACY_GIFS.find((x) => x[0] === m.content) || LEGACY_GIFS[0]; d.classList.add('gifcard'); d.appendChild(document.createTextNode(`${g[1]} ${g[2]}`)); }
@@ -265,7 +274,10 @@ function renderPanel() {
   const b = $('panelBody');
   document.querySelectorAll('.ptab').forEach((t) => t.classList.toggle('active', t.dataset.tab === panelTab));
   if (panelTab === 'emoji') b.innerHTML = EMOJIS.map((e) => `<button data-k="emoji">${e}</button>`).join('');
-  else if (panelTab === 'sticker') b.innerHTML = STICKERS.map((s) => `<button class="stk" data-k="sticker" title="Sticker">${s}</button>`).join('');
+  else if (panelTab === 'sticker') b.innerHTML = STICKER_PACKS.map((p) =>
+    `<div class="pack-label">${p.name}</div>` +
+    p.files.map((f) => `<button class="stkpick" data-k="stickerimg" data-url="${f}"><img loading="lazy" src="${f}" alt="sticker"></button>`).join('')
+  ).join('');
   else b.innerHTML = GIFS.map((u) => `<button class="gifpick" data-k="gif" data-url="${u}"><img class="gifthumb" loading="lazy" src="${u.replace('giphy.gif', '200.gif')}" alt="GIF"></button>`).join('');
 }
 $('emojiBtn').onclick = () => {
@@ -280,7 +292,7 @@ $('panelTabs').addEventListener('click', (e) => {
 $('panelBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.k === 'emoji') { $('textInput').value += b.textContent; $('textInput').focus(); }
-  if (b.dataset.k === 'sticker') send('sticker', b.textContent);
+  if (b.dataset.k === 'stickerimg') send('sticker', b.dataset.url);
   if (b.dataset.k === 'gif') send('gif', b.dataset.url);
 });
 
