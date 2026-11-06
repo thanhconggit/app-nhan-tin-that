@@ -29,6 +29,11 @@ const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const USER_FILE = path.join(DATA_DIR, 'users.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// Danh sach tai khoan da dang ky can XOA khoi noi luu tru khi khoi dong,
+// khai bao qua bien moi truong REMOVE_USERS (vi du: REMOVE_USERS=kiemtra,abc).
+// Server xoa cac tai khoan nay ca trong database/file roi moi tiep tuc chay.
+const REMOVE_USERS = (process.env.REMOVE_USERS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
 let messages = [];
 let registeredUsers = [];
 const userByName = new Map(USERS.map((u) => [u.username, u]));
@@ -67,12 +72,28 @@ async function initStorage() {
     await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL)');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
+    if (REMOVE_USERS.length) {
+      const before = registeredUsers.length;
+      registeredUsers = registeredUsers.filter((u) => !REMOVE_USERS.includes(u.username));
+      if (registeredUsers.length !== before) {
+        await pool.query('DELETE FROM users WHERE username = ANY($1)', [REMOVE_USERS]);
+        console.log(`[DB] Da xoa ${before - registeredUsers.length} tai khoan theo REMOVE_USERS: ${REMOVE_USERS.join(', ')}`);
+      }
+    }
     const rm = await pool.query('SELECT id, sender, recipient, type, content, at FROM messages ORDER BY id ASC');
     messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient, type: r.type, content: r.content, at: Number(r.at) }));
     console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky va ${messages.length} tin nhan tu Postgres`);
   } else {
     try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
     try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
+    if (REMOVE_USERS.length) {
+      const before = registeredUsers.length;
+      registeredUsers = registeredUsers.filter((u) => !REMOVE_USERS.includes(u.username));
+      if (registeredUsers.length !== before) {
+        try { fs.writeFileSync(USER_FILE, JSON.stringify(registeredUsers)); } catch (e) { console.error('Luu tai khoan loi:', e.message); }
+        console.log(`[FILE] Da xoa ${before - registeredUsers.length} tai khoan theo REMOVE_USERS: ${REMOVE_USERS.join(', ')}`);
+      }
+    }
   }
   for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
   seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
