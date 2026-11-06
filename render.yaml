@@ -10,3 +10,7 @@ services:
         value: 20
       - key: JWT_SECRET
         generateValue: true
+      # Chuoi ket noi Neon Postgres - dien gia tri that trong Render Dashboard > Environment.
+      # Co bien nay thi tai khoan + tin nhan luu vao database, khong mat khi deploy lai.
+      - key: DATABASE_URL
+        sync: false
