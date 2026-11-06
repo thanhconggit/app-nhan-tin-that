@@ -27,8 +27,13 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
   chuyện của mọi thành viên (có thông báo ngay khi được thêm), tin nhắn nhóm hiện tên người gửi,
   lịch sử nhóm lưu bền như tin 1-1 (bảng `groups` + cột `grp` trong `messages`), người ngoài nhóm bị chặn.
   Gọi thoại/video chỉ hỗ trợ 1-1.
-- Gửi: tin nhắn chữ, ảnh (nén trên trình duyệt, giới hạn kích thước), emoji, sticker (bộ ~40),
-  GIF động thật từ Giphy CDN (chỉ lưu URL nên không tốn dung lượng database), tin nhắn thoại
+- **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
+  thả cảm xúc ❤️ 😂 😮 😢 👍 😡 (bấm lại để gỡ, cảm xúc lưu bền trên server), **thu hồi tin nhắn**
+  của mình (cả hai phía đều thấy "Tin nhắn đã thu hồi"), và **xoá phía tôi** (chỉ ẩn trên máy mình,
+  nhớ bằng localStorage). Người tạo nhóm có nút 🗑️ để **xoá nhóm** — xoá cả tin nhắn nhóm của mọi thành viên.
+- Gửi: tin nhắn chữ, ảnh (nén trên trình duyệt, giới hạn kích thước), emoji, sticker ảnh thật
+  (4 bộ vẽ riêng: Mèo trắng, Shiba, Gà vàng, Thỏ — 48 sticker PNG nền trong suốt trong `public/stickers/`),
+  GIF động thật từ Giphy CDN (34 GIF, chỉ lưu URL nên không tốn dung lượng database), tin nhắn thoại
   (ghi bằng MediaRecorder, tối đa 60 giây / 2MB, người nhận bấm phát lại được).
 - Gọi thoại + gọi video WebRTC thật: xem trước camera của mình, thấy hình/nghe tiếng của người kia,
   tắt mic / tắt camera, bấm giờ cuộc gọi, nghe / từ chối / kết thúc, và lưu một dòng lịch sử cuộc gọi vào khung chat.
