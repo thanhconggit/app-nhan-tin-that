@@ -55,6 +55,7 @@
         <div class="grow"><div id="peerName"></div><div class="muted" id="peerStatus"></div></div>
         <button id="voiceCallBtn" title="Gọi thoại">📞</button>
         <button id="videoCallBtn" title="Gọi video">🎥</button>
+        <button id="groupDelBtn" title="Xoá nhóm" hidden>🗑️</button>
       </header>
       <div id="messages"></div>
       <div id="typing" class="muted"></div>
@@ -115,6 +116,23 @@
   <div class="call-btns">
     <button id="acceptBtn">✅ Nghe</button>
     <button id="rejectBtn" class="danger">❌ Từ chối</button>
+  </div>
+</div>
+
+<!-- ===== Menu tin nhan (nhan giu / chuot phai) ===== -->
+<div id="msgMenu" hidden>
+  <div class="mm-sheet">
+    <div id="mmReacts">
+      <button data-r="❤️">❤️</button>
+      <button data-r="😂">😂</button>
+      <button data-r="😮">😮</button>
+      <button data-r="😢">😢</button>
+      <button data-r="👍">👍</button>
+      <button data-r="😡">😡</button>
+    </div>
+    <button id="mmRecall">↩️ Thu hồi tin nhắn</button>
+    <button id="mmDelete">🗑️ Xoá phía tôi</button>
+    <button id="mmClose">Đóng</button>
   </div>
 </div>
 
