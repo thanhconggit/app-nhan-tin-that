@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Nhắn Tin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- ===== Dang nhap ===== -->
+<section id="loginView">
+  <div class="login-box">
+    <div class="logo">💬</div>
+    <h1>App Nhắn Tin</h1>
+    <p class="sub">Đăng nhập bằng tài khoản được cấp — không có đăng ký tự do</p>
+    <form id="loginForm">
+      <input id="username" placeholder="Tài khoản" autocomplete="username" required>
+      <input id="password" type="password" placeholder="Mật khẩu" autocomplete="current-password" required>
+      <button type="submit">Đăng nhập</button>
+      <p id="loginError" class="error"></p>
+    </form>
+    <p class="sub">Chạm để điền nhanh tài khoản test:</p>
+    <div id="quickAccounts"></div>
+  </div>
+</section>
+
+<!-- ===== App ===== -->
+<section id="appView" hidden>
+  <aside id="sidebar">
+    <header class="me">
+      <div class="avatar" id="myAvatar">?</div>
+      <div><div id="myName"></div><div class="muted" id="myUser"></div></div>
+      <button id="logoutBtn" title="Đăng xuất">⏻</button>
+    </header>
+    <input id="search" placeholder="Tìm người…">
+    <div id="convList"></div>
+  </aside>
+
+  <main id="chatPane">
+    <div id="emptyState">← Chọn một người để bắt đầu nhắn tin</div>
+    <div id="chatMain" hidden>
+      <header class="chat-head">
+        <button id="backBtn">←</button>
+        <div class="avatar" id="peerAvatar">?</div>
+        <div class="grow"><div id="peerName"></div><div class="muted" id="peerStatus"></div></div>
+        <button id="voiceCallBtn" title="Gọi thoại">📞</button>
+        <button id="videoCallBtn" title="Gọi video">🎥</button>
+      </header>
+      <div id="messages"></div>
+      <div id="typing" class="muted"></div>
+      <div id="panel" hidden></div>
+      <footer class="composer">
+        <button id="emojiBtn" title="Emoji / Sticker / GIF">😀</button>
+        <button id="photoBtn" title="Gửi ảnh">🖼️</button>
+        <input type="file" id="photoInput" accept="image/*" hidden>
+        <input id="textInput" placeholder="Nhập tin nhắn…">
+        <button id="voiceBtn" title="Ghi tin nhắn thoại">🎤</button>
+        <button id="sendBtn">Gửi</button>
+      </footer>
+      <div id="recBar" hidden>🔴 Đang ghi… <span id="recTime">0s</span> <button id="recStop">Dừng &amp; Gửi</button> <button id="recCancel">Huỷ</button></div>
+    </div>
+  </main>
+</section>
+
+<!-- ===== Cuoc goi ===== -->
+<div id="callView" hidden>
+  <h2 id="callTitle">Cuộc gọi</h2>
+  <p id="callStatus">Đang gọi…</p>
+  <div class="videos">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay playsinline muted></video>
+  </div>
+  <audio id="remoteAudio" autoplay></audio>
+  <div class="call-btns">
+    <button id="muteBtn">🔇 Tắt mic</button>
+    <button id="camBtn">📷 Tắt camera</button>
+    <button id="endCallBtn" class="danger">📵 Kết thúc</button>
+  </div>
+</div>
+
+<div id="incomingView" hidden>
+  <h2 id="incomingTitle">Cuộc gọi đến</h2>
+  <div class="call-btns">
+    <button id="acceptBtn">✅ Nghe</button>
+    <button id="rejectBtn" class="danger">❌ Từ chối</button>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

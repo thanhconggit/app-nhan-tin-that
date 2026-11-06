@@ -1,0 +1,52 @@
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#eef3fb;color:#17233b}
+button{cursor:pointer;border:1px solid #c9d6ee;background:#fff;border-radius:10px;padding:8px 12px;font-size:15px}
+button:hover{background:#eaf1ff}.danger{background:#e5484d;color:#fff;border-color:#e5484d}
+input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;width:100%}
+.muted{color:#6b7a90;font-size:13px}.error{color:#d92d20;min-height:18px}.grow{flex:1}
+/* login */
+#loginView{display:flex;min-height:100vh;align-items:center;justify-content:center;background:linear-gradient(160deg,#0068ff,#00a3ff)}
+.login-box{background:#fff;border-radius:18px;padding:28px;width:min(420px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.25);text-align:center}
+.login-box .logo{font-size:44px}.login-box h1{color:#0068ff;margin:6px 0}
+#loginForm{display:grid;gap:10px;margin:14px 0}#loginForm button{background:#0068ff;color:#fff;border:none;padding:12px;font-weight:600}
+#quickAccounts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#quickAccounts button{text-align:left;font-size:13px;line-height:1.35}
+/* layout */
+#appView{display:flex;height:100vh}
+#sidebar{width:320px;max-width:92vw;background:#fff;border-right:1px solid #dde6f5;display:flex;flex-direction:column}
+#sidebar .me{display:flex;gap:10px;align-items:center;padding:12px;border-bottom:1px solid #eef2fa}
+#search{margin:10px;width:calc(100% - 20px)}
+#convList{overflow:auto}
+.conv{display:flex;gap:10px;align-items:center;padding:11px 12px;cursor:pointer;border-bottom:1px solid #f2f5fb}
+.conv:hover,.conv.active{background:#eaf1ff}.conv .info{flex:1;min-width:0}.conv .last{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.avatar{width:42px;height:42px;border-radius:50%;background:#0068ff;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;position:relative}
+.dot{position:absolute;right:0;bottom:0;width:11px;height:11px;border-radius:50%;background:#c3ccd9;border:2px solid #fff}.dot.on{background:#12b76a}
+.badge{background:#e5484d;color:#fff;border-radius:999px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;padding:0 5px}
+#chatPane{flex:1;display:flex;flex-direction:column;background:#eef3fb}
+#emptyState{margin:auto;color:#6b7a90}
+#chatMain{display:flex;flex-direction:column;height:100%}
+.chat-head{display:flex;gap:10px;align-items:center;background:#fff;padding:10px 12px;border-bottom:1px solid #dde6f5}
+#messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:min(70%,520px);padding:9px 12px;border-radius:14px;background:#fff;align-self:flex-start;box-shadow:0 1px 2px rgba(0,0,0,.06);word-break:break-word}
+.msg.mine{background:#0068ff;color:#fff;align-self:flex-end}
+.msg .time{font-size:11px;opacity:.65;margin-top:4px;text-align:right}
+.msg img.photo{max-width:100%;border-radius:10px}
+.msg.big{font-size:44px;background:transparent;box-shadow:none}
+.msg.gifcard{font-size:30px;text-align:center;background:linear-gradient(135deg,#7c5cff,#00c2ff);color:#fff;animation:bounce 1s infinite alternate}
+@keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-5px)}}
+#typing{padding:0 14px;min-height:18px}
+#panel{background:#fff;border-top:1px solid #dde6f5;padding:10px;display:flex;flex-wrap:wrap;gap:8px;max-height:190px;overflow:auto}
+#panel button{font-size:24px;padding:6px 9px}
+#panel .gifbtn{font-size:16px;background:linear-gradient(135deg,#7c5cff,#00c2ff);color:#fff;animation:bounce 1s infinite alternate}
+.composer{display:flex;gap:7px;background:#fff;padding:10px;border-top:1px solid #dde6f5;align-items:center}
+.composer input{flex:1}#sendBtn{background:#0068ff;color:#fff;border:none;font-weight:600}
+#recBar{background:#fff3f3;padding:10px;text-align:center}
+/* call */
+#callView,#incomingView{position:fixed;inset:0;background:#0b1526;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:50;text-align:center;padding:16px}
+.videos{position:relative;width:min(860px,94vw)}
+#remoteVideo{width:100%;max-height:62vh;background:#000;border-radius:14px}
+#localVideo{position:absolute;right:10px;bottom:10px;width:26%;background:#000;border-radius:10px;border:2px solid #fff}
+.call-btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#toasts{position:fixed;right:12px;bottom:12px;display:grid;gap:8px;z-index:60}
+.toast{background:#17233b;color:#fff;padding:11px 14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:300px}
+@media(max-width:760px){#sidebar{width:100%}#chatPane{display:none}#appView.chat-open #sidebar{display:none}#appView.chat-open #chatPane{display:flex}}
+@media(min-width:761px){#backBtn{display:none}}
