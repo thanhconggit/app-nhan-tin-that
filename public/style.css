@@ -35,9 +35,15 @@ input{padding:11px;border:1px solid #c9d6ee;border-radius:10px;font-size:15px;wi
 .msg.gifcard{font-size:30px;text-align:center;background:linear-gradient(135deg,#7c5cff,#00c2ff);color:#fff;animation:bounce 1s infinite alternate}
 @keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-5px)}}
 #typing{padding:0 14px;min-height:18px}
-#panel{background:#fff;border-top:1px solid #dde6f5;padding:10px;display:flex;flex-wrap:wrap;gap:8px;max-height:190px;overflow:auto}
-#panel button{font-size:24px;padding:6px 9px}
-#panel .gifbtn{font-size:16px;background:linear-gradient(135deg,#7c5cff,#00c2ff);color:#fff;animation:bounce 1s infinite alternate}
+#panel{background:#fff;border-top:1px solid #dde6f5;padding:10px;display:flex;flex-direction:column;gap:8px;max-height:250px}
+#panelTabs{display:flex;gap:6px}
+.ptab{font-size:14px;font-weight:600;color:#48607f}
+.ptab.active{background:#0068ff;color:#fff;border-color:#0068ff}
+#panelBody{display:flex;flex-wrap:wrap;gap:8px;overflow:auto}
+#panelBody button{font-size:24px;padding:6px 9px}
+#panelBody button.stk{font-size:32px;padding:4px 8px}
+#panelBody button.gifpick{padding:2px;line-height:0}
+#panelBody img.gifthumb{width:82px;height:82px;object-fit:cover;border-radius:8px;display:block}
 .composer{display:flex;gap:7px;background:#fff;padding:10px;border-top:1px solid #dde6f5;align-items:center}
 .composer input{flex:1}#sendBtn{background:#0068ff;color:#fff;border:none;font-weight:600}
 #recBar{background:#fff3f3;padding:10px;text-align:center}
@@ -93,4 +99,26 @@ button{touch-action:manipulation}
   .msg{max-width:88%}
   .composer button{min-width:38px}
   .chat-head button{min-width:40px}
+}
+/* ===== Nhom, tieng thong bao, sticker/GIF that (them 06/11/2026) ===== */
+#newGroupBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#eaf1ff;border-color:#c9d6ee;font-weight:600;color:#0050c8}
+.list-label{padding:10px 12px 4px;font-size:12px;font-weight:700;color:#6b7a90;text-transform:uppercase;letter-spacing:.4px}
+.avatar.gav{background:linear-gradient(135deg,#7c5cff,#00c2ff)}
+.sender-name{font-size:12px;font-weight:700;color:#7c5cff;margin-bottom:2px}
+#groupView{position:fixed;inset:0;background:rgba(11,21,38,.55);display:flex;align-items:center;justify-content:center;z-index:55;padding:16px}
+.group-box{background:#fff;border-radius:16px;padding:20px;width:min(430px,94vw);max-height:86dvh;overflow:auto;text-align:left;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.group-box h2{margin:0 0 12px;color:#0068ff}
+#memberList{display:grid;gap:5px;max-height:38dvh;overflow:auto;margin-top:6px}
+.member-row{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid #eef2fa;border-radius:10px;cursor:pointer}
+.member-row input{width:auto}
+.member-row .avatar{width:32px;height:32px;font-size:14px}
+#createGroupBtn{background:#0068ff;color:#fff;border:none;font-weight:600}
+@media (max-width:760px){
+  #panel{max-height:42dvh}
+  #panelBody button{min-width:46px;min-height:46px;font-size:25px}
+  #panelBody button.stk{font-size:32px}
+  #panelBody img.gifthumb{width:calc((100vw - 52px)/3);height:calc((100vw - 52px)/3)}
+  .ptab{min-height:40px;flex:1}
+  .group-box{padding:16px}
+  #newGroupBtn{min-height:44px}
 }
