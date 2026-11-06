@@ -2,8 +2,12 @@
 /* Client dung Socket.IO do chinh server phat tai /socket.io/socket.io.js (khong dung package rieng, tranh lech phien ban) */
 const $ = (id) => document.getElementById(id);
 const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','😢','😭','😡','👍','👎','👏','🙏','💪','🔥','❤️','💔','🎉','🎂','🌹','☀️','🌧️','⭐','✅','❌','🎵','⚽','🍜','☕','🍺','🚗','✈️','🏠','💰','📱','💻','🎮','📚','😴','🤔','😅','🥰','😜','🫡','🤝','🫶','👋','👀','💯','🥳','😱','🤗','🙂','😉','😋','😇','🥹','🤠','👻','💩','🐶','🐱'];
-const STICKERS = ['❤️','🔥','👍','🎉','😂','🥰','💯','🌟','🍀','🎁','🏆','💪','🫶','🥳','🐻','🐰'];
-const GIFS = [
+const STICKERS = ['❤️','🔥','👍','🎉','😂','🥰','💯','🌟','🍀','🎁','🏆','💪','🫶','🥳','🐻','🐰','🐶','🐱','🦊','🐷','🌹','🌈','🍕','🍜','☕','🎂','⚽','🎮','🚗','✈️','💤','🤙','👏','🙏','👋','🫡','🤝','💸','😴','🤗','😘','😍','🤣','👻'];
+/* GIF dong that tu Giphy CDN (URL da kiem chung song lau dai); anh nho 200.gif dung cho khay chon */
+const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi']
+  .map((id) => `https://media.giphy.com/media/${id}/giphy.gif`);
+/* GIF dang the chu cua ban cu - chi de hien lai tin nhan cu cho dung */
+const LEGACY_GIFS = [
   ['chao', '👋', 'Xin chào!'], ['cuoi', '😂', 'Haha!'], ['tim', '❤️', 'Thả tim'],
   ['mung', '🎉', 'Ăn mừng!'], ['wow', '😮', 'Wow!'], ['ok', '👌', 'OK!'],
   ['ngu', '💤', 'Buồn ngủ'], ['yeu', '🥰', 'Yêu quá'], ['khoc', '😭', 'Khóc'],
@@ -11,9 +15,49 @@ const GIFS = [
 ];
 
 let token = localStorage.getItem('token') || '';
-let me = null, socket = null, users = [], online = new Set();
-let currentPeer = null, unread = {}, lastMsg = {};
+let me = null, socket = null, users = [], groups = [], online = new Set();
+let currentPeer = null, currentGroup = null, unread = {}, lastMsg = {};
 const msgsCache = {};
+const keyOf = (m) => (m.groupId ? 'g:' + m.groupId : 'u:' + (m.from === me.username ? m.to : m.from));
+const currentKey = () => (currentGroup ? 'g:' + currentGroup : currentPeer ? 'u:' + currentPeer : null);
+const groupById = (id) => groups.find((g) => g.id === id);
+
+/* ================= Tieng thong bao (WebAudio, khong can file am thanh) ================= */
+let audioCtx = null;
+let soundOn = localStorage.getItem('sound') !== 'off';
+function ensureAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { audioCtx = null; } }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+document.addEventListener('pointerdown', ensureAudio);
+function tone(freq, delay, dur, vol = 0.14) {
+  if (!audioCtx || !soundOn) return;
+  const t = audioCtx.currentTime + delay;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function ding() { ensureAudio(); tone(880, 0, 0.18); tone(1318, 0.09, 0.28); }
+let ringTimer = null;
+function startRing() {
+  if (!soundOn) return;
+  ensureAudio();
+  const ring = () => { tone(1046, 0, 0.35, 0.11); tone(1046, 0.45, 0.35, 0.11); };
+  ring(); stopRingOnly(); ringTimer = setInterval(ring, 2300);
+}
+function stopRingOnly() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
+function stopRing() { stopRingOnly(); }
+$('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+$('soundBtn').onclick = () => {
+  soundOn = !soundOn;
+  localStorage.setItem('sound', soundOn ? 'on' : 'off');
+  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+  if (!soundOn) stopRing(); else ding();
+};
 
 $('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault(); $('loginError').textContent = '';
@@ -45,16 +89,30 @@ async function enterApp() {
   $('loginView').hidden = true; $('appView').hidden = false;
   $('myName').textContent = me.displayName; $('myUser').textContent = '@' + me.username;
   $('myAvatar').textContent = me.displayName[0];
+  ensureAudio();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   const r = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + token } });
   users = (await r.json()).users.filter((u) => u.username !== me.username);
+  await loadGroups();
   socket = io({ auth: { token } });
   socket.on('connect', () => socket.emit('presence:get'));
   socket.on('presence', ({ online: o }) => { online = new Set(o); renderList(); if (currentPeer) $('peerStatus').textContent = online.has(currentPeer) ? 'Đang online' : 'Ngoại tuyến'; });
   socket.on('message:new', onIncomingMessage);
+  socket.on('group:created', (g) => {
+    if (!groupById(g.id)) groups.push(g);
+    renderList(); ding();
+    toast('Nhóm mới', `Bạn được thêm vào nhóm "${g.name}"`);
+  });
   socket.on('typing', ({ from }) => { if (from === currentPeer) { $('typing').textContent = 'Đang nhập…'; setTimeout(() => $('typing').textContent = '', 1800); } });
   wireCallSocket();
   renderList();
+}
+
+async function loadGroups() {
+  try {
+    const r = await fetch('/api/groups', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) groups = (await r.json()).groups || [];
+  } catch { /* giu danh sach cu */ }
 }
 
 function toast(title, body) {
@@ -71,34 +129,76 @@ function peerName(u) { return (users.find((x) => x.username === u) || {}).displa
 
 function renderList() {
   const q = $('search').value.toLowerCase();
-  $('convList').innerHTML = users.filter((u) => u.displayName.toLowerCase().includes(q)).map((u) => {
-    const on = online.has(u.username); const last = lastMsg[u.username];
-    return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-u="${u.username}">
+  const gs = groups.filter((g) => g.name.toLowerCase().includes(q));
+  const us = users.filter((u) => u.displayName.toLowerCase().includes(q));
+  let h = '';
+  if (gs.length) {
+    h += `<div class="list-label">Nhóm</div>` + gs.map((g) => {
+      const last = lastMsg['g:' + g.id];
+      const prev = last ? escapeHtml((last.from !== me.username ? peerName(last.from) + ': ' : '') + preview(last)) : `${g.members.length} thành viên`;
+      return `<div class="conv ${g.id === currentGroup ? 'active' : ''}" data-kind="group" data-id="${g.id}">
+        <div class="avatar gav">👥</div>
+        <div class="info"><div><b>${escapeHtml(g.name)}</b></div>
+        <div class="muted last">${prev}</div></div>
+        ${unread['g:' + g.id] ? `<span class="badge">${unread['g:' + g.id]}</span>` : ''}</div>`;
+    }).join('');
+  }
+  h += `<div class="list-label">Mọi người</div>` + us.map((u) => {
+    const on = online.has(u.username); const last = lastMsg['u:' + u.username];
+    return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
       <div class="avatar">${u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
       <div class="info"><div><b>${u.displayName}</b></div>
       <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
-      ${unread[u.username] ? `<span class="badge">${unread[u.username]}</span>` : ''}</div>`;
+      ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
   }).join('');
+  $('convList').innerHTML = h;
 }
 $('search').oninput = renderList;
-$('convList').addEventListener('click', (e) => { const c = e.target.closest('.conv'); if (c) openChat(c.dataset.u); });
-function preview(m) { return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', sticker: 'Sticker ' + m.content, gif: 'GIF', call: m.content })[m.type] || m.content; }
+$('convList').addEventListener('click', (e) => {
+  const c = e.target.closest('.conv'); if (!c) return;
+  if (c.dataset.kind === 'group') openGroup(c.dataset.id); else openChat(c.dataset.u);
+});
+function preview(m) { return m.type === 'text' || m.type === 'emoji' ? m.content : ({ image: '🖼️ Ảnh', audio: '🎤 Tin nhắn thoại', sticker: 'Sticker ' + m.content, gif: '🎬 GIF', call: m.content })[m.type] || m.content; }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-async function openChat(peer) {
-  currentPeer = peer; unread[peer] = 0;
+function showChatUI() {
   $('emptyState').hidden = true; $('chatMain').hidden = false;
   document.querySelector('#appView').classList.add('chat-open');
+}
+async function openChat(peer) {
+  currentPeer = peer; currentGroup = null; unread['u:' + peer] = 0;
+  showChatUI();
+  $('voiceCallBtn').style.display = ''; $('videoCallBtn').style.display = '';
   $('peerName').textContent = peerName(peer);
   $('peerAvatar').textContent = peerName(peer)[0];
+  $('peerAvatar').classList.remove('gav');
   $('peerStatus').textContent = online.has(peer) ? 'Đang online' : 'Ngoại tuyến';
   renderList();
-  if (!msgsCache[peer]) {
+  const key = 'u:' + peer;
+  if (!msgsCache[key]) {
     const r = await fetch('/api/messages/' + peer, { headers: { Authorization: 'Bearer ' + token } });
-    msgsCache[peer] = (await r.json()).messages || [];
-    for (const m of msgsCache[peer]) lastMsg[peer] = m;
+    msgsCache[key] = (await r.json()).messages || [];
+    for (const m of msgsCache[key]) lastMsg[key] = m;
   }
-  $('messages').innerHTML = ''; msgsCache[peer].forEach(renderMsg); scrollDown();
+  $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
+}
+async function openGroup(id) {
+  const g = groupById(id); if (!g) return;
+  currentGroup = id; currentPeer = null; unread['g:' + id] = 0;
+  showChatUI();
+  $('voiceCallBtn').style.display = 'none'; $('videoCallBtn').style.display = 'none';
+  $('peerName').textContent = g.name;
+  $('peerAvatar').textContent = '👥';
+  $('peerAvatar').classList.add('gav');
+  $('peerStatus').textContent = `${g.members.length} thành viên`;
+  renderList();
+  const key = 'g:' + id;
+  if (!msgsCache[key]) {
+    const r = await fetch('/api/groups/' + id + '/messages', { headers: { Authorization: 'Bearer ' + token } });
+    msgsCache[key] = (await r.json()).messages || [];
+    for (const m of msgsCache[key]) lastMsg[key] = m;
+  }
+  $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
 }
 $('backBtn').onclick = () => document.querySelector('#appView').classList.remove('chat-open');
 
@@ -106,54 +206,109 @@ function renderMsg(m) {
   const d = document.createElement('div');
   d.className = 'msg' + (m.from === me.username ? ' mine' : '');
   const time = `<div class="time">${new Date(m.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>`;
-  if (m.type === 'text') d.textContent = m.content;
-  else if (m.type === 'emoji' || m.type === 'sticker') { d.classList.add('big'); d.textContent = m.content; }
-  else if (m.type === 'gif') { const g = GIFS.find((x) => x[0] === m.content) || GIFS[0]; d.classList.add('gifcard'); d.textContent = `${g[1]} ${g[2]}`; }
+  if (m.groupId && m.from !== me.username) {
+    const s = document.createElement('div'); s.className = 'sender-name'; s.textContent = peerName(m.from); d.appendChild(s);
+  }
+  if (m.type === 'text') d.appendChild(document.createTextNode(m.content));
+  else if (m.type === 'emoji' || m.type === 'sticker') { d.classList.add('big'); d.appendChild(document.createTextNode(m.content)); }
+  else if (m.type === 'gif') {
+    if (String(m.content).startsWith('http')) { const img = document.createElement('img'); img.className = 'photo'; img.src = m.content; img.alt = 'GIF'; d.appendChild(img); }
+    else { const g = LEGACY_GIFS.find((x) => x[0] === m.content) || LEGACY_GIFS[0]; d.classList.add('gifcard'); d.appendChild(document.createTextNode(`${g[1]} ${g[2]}`)); }
+  }
   else if (m.type === 'image') { const img = document.createElement('img'); img.className = 'photo'; img.src = m.content; img.alt = 'Ảnh'; d.appendChild(img); }
   else if (m.type === 'audio') { const a = document.createElement('audio'); a.controls = true; a.src = m.content; d.appendChild(a); }
-  else if (m.type === 'call') d.textContent = '📞 ' + m.content;
-  else d.textContent = m.content;
+  else if (m.type === 'call') d.appendChild(document.createTextNode('📞 ' + m.content));
+  else d.appendChild(document.createTextNode(m.content));
   d.insertAdjacentHTML('beforeend', time);
   $('messages').appendChild(d);
 }
 function scrollDown() { const b = $('messages'); b.scrollTop = b.scrollHeight; }
 
 function onIncomingMessage(m) {
-  const peer = m.from === me.username ? m.to : m.from;
-  (msgsCache[peer] = msgsCache[peer] || []).push(m); lastMsg[peer] = m;
-  if (peer === currentPeer && m.from !== me.username) { renderMsg(m); scrollDown(); }
-  else if (m.from !== me.username) { unread[peer] = (unread[peer] || 0) + 1; notify(peerName(m.from), preview(m)); }
+  const key = keyOf(m);
+  (msgsCache[key] = msgsCache[key] || []).push(m); lastMsg[key] = m;
+  const viewing = key === currentKey();
+  if (viewing && m.from !== me.username) { renderMsg(m); scrollDown(); }
+  else if (m.from !== me.username) {
+    unread[key] = (unread[key] || 0) + 1;
+    if (m.groupId) { const g = groupById(m.groupId); notify(g ? g.name : 'Nhóm', peerName(m.from) + ': ' + preview(m)); }
+    else notify(peerName(m.from), preview(m));
+  }
+  if (m.from !== me.username && (!viewing || document.hidden)) ding();
   renderList();
 }
 
+function handleSent(msg) {
+  const key = keyOf(msg);
+  (msgsCache[key] = msgsCache[key] || []).push(msg); lastMsg[key] = msg;
+  if (key === currentKey()) { renderMsg(msg); scrollDown(); }
+  renderList();
+}
 function send(type, content) {
-  if (!currentPeer) return;
-  socket.emit('message:send', { to: currentPeer, type, content }, (res) => {
-    if (res?.ok) { (msgsCache[currentPeer] = msgsCache[currentPeer] || []).push(res.message); lastMsg[currentPeer] = res.message; renderMsg(res.message); scrollDown(); renderList(); }
+  const payload = currentGroup ? { groupId: currentGroup, type, content } : currentPeer ? { to: currentPeer, type, content } : null;
+  if (!payload) return;
+  socket.emit('message:send', payload, (res) => {
+    if (res?.ok) handleSent(res.message);
     else toast('Không gửi được', res?.error || 'Lỗi');
   });
+}
+function sendDM(peer, type, content) {
+  socket.emit('message:send', { to: peer, type, content }, (res) => { if (res?.ok) handleSent(res.message); });
 }
 $('sendBtn').onclick = () => { const v = $('textInput').value.trim(); if (v) { send('text', v); $('textInput').value = ''; } };
 $('textInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sendBtn').click(); });
 $('textInput').addEventListener('input', () => { if (currentPeer) socket.emit('typing', { to: currentPeer }); });
 
-/* Panel emoji / sticker / GIF */
-let panelMode = null;
+/* Panel emoji / sticker / GIF - 3 tab rieng */
+let panelTab = 'emoji';
+function renderPanel() {
+  const b = $('panelBody');
+  document.querySelectorAll('.ptab').forEach((t) => t.classList.toggle('active', t.dataset.tab === panelTab));
+  if (panelTab === 'emoji') b.innerHTML = EMOJIS.map((e) => `<button data-k="emoji">${e}</button>`).join('');
+  else if (panelTab === 'sticker') b.innerHTML = STICKERS.map((s) => `<button class="stk" data-k="sticker" title="Sticker">${s}</button>`).join('');
+  else b.innerHTML = GIFS.map((u) => `<button class="gifpick" data-k="gif" data-url="${u}"><img class="gifthumb" loading="lazy" src="${u.replace('giphy.gif', '200.gif')}" alt="GIF"></button>`).join('');
+}
 $('emojiBtn').onclick = () => {
   const p = $('panel');
-  if (!p.hidden && panelMode === 'all') { p.hidden = true; return; }
-  panelMode = 'all'; p.hidden = false;
-  p.innerHTML =
-    EMOJIS.map((e) => `<button data-k="emoji">${e}</button>`).join('') +
-    STICKERS.map((s) => `<button data-k="sticker" title="Sticker">${s}</button>`).join('') +
-    GIFS.map((g) => `<button class="gifbtn" data-k="gif" data-id="${g[0]}">${g[1]} ${g[2]}</button>`).join('');
+  if (!p.hidden) { p.hidden = true; return; }
+  p.hidden = false; renderPanel();
 };
-$('panel').addEventListener('click', (e) => {
+$('panelTabs').addEventListener('click', (e) => {
+  const t = e.target.closest('.ptab'); if (!t) return;
+  panelTab = t.dataset.tab; renderPanel();
+});
+$('panelBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.k === 'emoji') { $('textInput').value += b.textContent; $('textInput').focus(); }
   if (b.dataset.k === 'sticker') send('sticker', b.textContent);
-  if (b.dataset.k === 'gif') send('gif', b.dataset.id);
+  if (b.dataset.k === 'gif') send('gif', b.dataset.url);
 });
+
+/* Tao nhom */
+$('newGroupBtn').onclick = () => {
+  $('groupError').textContent = ''; $('groupName').value = '';
+  $('memberList').innerHTML = users.map((u) => `<label class="member-row">
+    <input type="checkbox" value="${u.username}">
+    <span class="avatar">${u.displayName[0]}</span>
+    <span><b>${escapeHtml(u.displayName)}</b><br><span class="muted">@${u.username}</span></span>
+  </label>`).join('') || '<p class="muted">Chưa có người dùng nào khác.</p>';
+  $('groupView').hidden = false;
+};
+$('cancelGroupBtn').onclick = () => { $('groupView').hidden = true; };
+$('createGroupBtn').onclick = async () => {
+  $('groupError').textContent = '';
+  const members = [...document.querySelectorAll('#memberList input:checked')].map((i) => i.value);
+  try {
+    const r = await fetch('/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ name: $('groupName').value, members }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Tạo nhóm thất bại');
+    groups.push(d.group);
+    $('groupView').hidden = true;
+    toast('Đã tạo nhóm', d.group.name);
+    openGroup(d.group.id);
+  } catch (err) { $('groupError').textContent = err.message; }
+};
 
 /* Gui anh: nen tren client, gioi han kich thuoc */
 $('photoBtn').onclick = () => $('photoInput').click();
@@ -219,11 +374,12 @@ function startTimer() {
     $('callStatus').textContent = `Đang nói • ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }, 1000);
 }
 function cleanupCall(sendHistory, label) {
+  stopRing();
   clearInterval(callTimer);
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
   $('callView').hidden = true; $('incomingView').hidden = true;
-  if (sendHistory && callPeer) send('call', label || 'Cuộc gọi');
+  if (sendHistory && callPeer) sendDM(callPeer, 'call', label || 'Cuộc gọi');
   callPeer = null; pendingOffer = null;
 }
 async function startCall(type) {
@@ -242,6 +398,7 @@ function wireCallSocket() {
     callPeer = from; callType = t; pendingOffer = offer;
     $('incomingTitle').textContent = `${fromName || peerName(from)} đang gọi ${t === 'video' ? 'video' : 'thoại'}…`;
     $('incomingView').hidden = false; notify('Cuộc gọi đến', $('incomingTitle').textContent);
+    startRing();
   });
   socket.on('call:answered', async ({ answer }) => { if (pc) { await pc.setRemoteDescription(answer); startTimer(); } });
   socket.on('call:ice', async ({ candidate }) => { try { if (pc && candidate) await pc.addIceCandidate(candidate); } catch {} });
@@ -249,6 +406,7 @@ function wireCallSocket() {
   socket.on('call:ended', () => { toast('Cuộc gọi đã kết thúc', ''); cleanupCall(false); });
 }
 $('acceptBtn').onclick = async () => {
+  stopRing();
   $('incomingView').hidden = true; newPC();
   try { await getMedia(); } catch { toast('Không mở được mic/camera', ''); socket.emit('call:reject', { to: callPeer }); cleanupCall(false); return; }
   await pc.setRemoteDescription(pendingOffer);
@@ -256,7 +414,7 @@ $('acceptBtn').onclick = async () => {
   socket.emit('call:answer', { to: callPeer, answer });
   showCall(peerName(callPeer), 'Đang kết nối…'); startTimer();
 };
-$('rejectBtn').onclick = () => { socket.emit('call:reject', { to: callPeer }); cleanupCall(false); };
+$('rejectBtn').onclick = () => { stopRing(); socket.emit('call:reject', { to: callPeer }); cleanupCall(false); };
 $('endCallBtn').onclick = () => { const dur = callStartAt ? Math.floor((Date.now() - callStartAt) / 1000) : 0;
   socket.emit('call:end', { to: callPeer }); cleanupCall(true, `Cuộc gọi ${callType === 'video' ? 'video' : 'thoại'} · ${dur}s`); };
 $('muteBtn').onclick = () => { localStream?.getAudioTracks().forEach((t) => t.enabled = !t.enabled); };
