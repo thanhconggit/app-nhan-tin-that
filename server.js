@@ -32,7 +32,17 @@ function persist() {
   }, 150);
 }
 
+const USER_FILE = path.join(DATA_DIR, 'users.json');
+let registeredUsers = [];
+try {
+  if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8'));
+  if (!Array.isArray(registeredUsers)) registeredUsers = [];
+} catch { registeredUsers = []; }
 const userByName = new Map(USERS.map((u) => [u.username, u]));
+for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
+function saveUsers() {
+  try { fs.writeFileSync(USER_FILE, JSON.stringify(registeredUsers)); } catch (e) { console.error('Luu tai khoan loi:', e.message); }
+}
 const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
 let seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
 
@@ -51,7 +61,7 @@ function authRest(req, res, next) {
   } catch { res.status(401).json({ error: 'Phien dang nhap khong hop le' }); }
 }
 
-// Dang nhap - chi tai khoan duoc cap san, KHONG co endpoint dang ky
+// Dang nhap - tai khoan cap san (seed-users.js) + tai khoan tu dang ky (data/users.json)
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   const u = userByName.get(String(username || '').trim().toLowerCase());
@@ -62,10 +72,27 @@ app.post('/api/login', (req, res) => {
   res.json({ token, user: publicUser(u) });
 });
 
+// Tao tai khoan moi - luu tren server (data/users.json), mat khau chi luu bcrypt hash
+app.post('/api/register', (req, res) => {
+  const { username, password, displayName } = req.body || {};
+  const un = String(username || '').trim().toLowerCase();
+  const dn = String(displayName || '').trim();
+  if (!/^[a-z0-9_]{3,20}$/.test(un)) return res.status(400).json({ error: 'Tai khoan 3-20 ky tu: chu thuong, so hoac dau _' });
+  if (String(password || '').length < 6) return res.status(400).json({ error: 'Mat khau toi thieu 6 ky tu' });
+  if (dn.length < 2 || dn.length > 50) return res.status(400).json({ error: 'Ten hien thi tu 2-50 ky tu' });
+  if (userByName.has(un)) return res.status(409).json({ error: 'Tai khoan da ton tai' });
+  const u = { username: un, displayName: dn, passwordHash: bcrypt.hashSync(String(password), 10) };
+  registeredUsers.push(u);
+  userByName.set(un, u);
+  saveUsers();
+  const token = jwt.sign({ username: un }, JWT_SECRET, { expiresIn: '30d' });
+  res.status(201).json({ token, user: publicUser(u) });
+});
+
 app.get('/api/me', authRest, (req, res) => res.json({ user: publicUser(userByName.get(req.username)) }));
 
 app.get('/api/users', authRest, (req, res) => {
-  res.json({ users: USERS.map(publicUser), online: [...onlineUsers()] });
+  res.json({ users: [...userByName.values()].map(publicUser), online: [...onlineUsers()] });
 });
 
 app.get('/api/messages/:peer', authRest, (req, res) => {
