@@ -38,9 +38,11 @@
     <header class="me">
       <div class="avatar" id="myAvatar">?</div>
       <div><div id="myName"></div><div class="muted" id="myUser"></div></div>
+      <button id="soundBtn" title="Bật/tắt tiếng thông báo">🔊</button>
       <button id="logoutBtn" title="Đăng xuất">⏻</button>
     </header>
-    <input id="search" placeholder="Tìm người…">
+    <input id="search" placeholder="Tìm người hoặc nhóm…">
+    <button id="newGroupBtn">➕ Tạo nhóm</button>
     <div id="convList"></div>
   </aside>
 
@@ -56,7 +58,14 @@
       </header>
       <div id="messages"></div>
       <div id="typing" class="muted"></div>
-      <div id="panel" hidden></div>
+      <div id="panel" hidden>
+        <div id="panelTabs">
+          <button class="ptab active" data-tab="emoji">😀 Emoji</button>
+          <button class="ptab" data-tab="sticker">🎨 Sticker</button>
+          <button class="ptab" data-tab="gif">🎬 GIF</button>
+        </div>
+        <div id="panelBody"></div>
+      </div>
       <footer class="composer">
         <button id="emojiBtn" title="Emoji / Sticker / GIF">😀</button>
         <button id="photoBtn" title="Gửi ảnh">🖼️</button>
@@ -69,6 +78,21 @@
     </div>
   </main>
 </section>
+
+<!-- ===== Tao nhom ===== -->
+<div id="groupView" hidden>
+  <div class="group-box">
+    <h2>Tạo nhóm mới</h2>
+    <input id="groupName" placeholder="Tên nhóm">
+    <p class="muted">Chọn thành viên (ít nhất 2 người):</p>
+    <div id="memberList"></div>
+    <p id="groupError" class="error"></p>
+    <div class="call-btns">
+      <button id="createGroupBtn">Tạo nhóm</button>
+      <button id="cancelGroupBtn">Huỷ</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== Cuoc goi ===== -->
 <div id="callView" hidden>
