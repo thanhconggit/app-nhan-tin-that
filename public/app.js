@@ -13,6 +13,7 @@ const STICKER_PACKS = [
   { name: '🍄 Đầu nấm', files: Array.from({ length: 12 }, (_, i) => `/stickers/nam-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐸 Ếch ngáo', files: Array.from({ length: 12 }, (_, i) => `/stickers/ech-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐷 Heo bựa', files: Array.from({ length: 12 }, (_, i) => `/stickers/heo-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐱 Mèo cam ngáo', files: Array.from({ length: 12 }, (_, i) => `/stickers/cam-${String(i + 1).padStart(2, '0')}.png`) },
 ];
 /* GIF dong that tu Giphy CDN. Luu y: nhieu GIF bi Giphy xoa se tra anh "not available" du HTTP 200,
    nen danh sach nay da kiem chung bang cach TAI THAT tung file (06/11/2026): dung noi dung that,
