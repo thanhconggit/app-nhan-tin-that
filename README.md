@@ -9,7 +9,12 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 
 ## Tính năng
 
-- Đăng nhập bằng tài khoản được cấp sẵn — **không có đăng ký tự do** (không có endpoint đăng ký).
+- Đăng nhập bằng tài khoản được cấp sẵn, hoặc **tự tạo tài khoản** ngay ở màn hình đăng nhập
+  (mục "Tạo tài khoản"): tài khoản được lưu trên server tại `data/users.json`
+  (mật khẩu chỉ lưu dạng bcrypt hash), tạo xong đăng nhập được ngay và xuất hiện trong danh bạ của mọi người.
+  Tên tài khoản 3–20 ký tự (chữ thường, số, `_`), mật khẩu tối thiểu 6 ký tự, không tạo trùng được.
+  Lưu ý: giống lịch sử tin nhắn, file tài khoản nằm trên đĩa của host — gói Free của Render dùng đĩa tạm
+  nên tài khoản tự tạo có thể mất khi service restart/redeploy; muốn lưu bền vững cần gắn thêm database/đĩa persistent.
 - Danh bạ / danh sách trò chuyện: trạng thái online thật từ server, badge chưa đọc,
   thông báo trình duyệt (Notification API) + toast trong app khi có tin nhắn mới lúc không mở cuộc trò chuyện đó.
 - Chat 1-1 thời gian thực qua Socket.IO; lịch sử tin nhắn lưu trên server (file `data/messages.json`).
@@ -31,7 +36,7 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 | hoangnam | 123456 | Vũ Hoàng Nam |
 | admin | admin123 | Quản trị viên |
 
-Trên màn hình đăng nhập có sẵn thẻ chạm-để-điền-nhanh cho từng tài khoản.
+Các thẻ điền nhanh tài khoản test trên màn hình đăng nhập đã được ẩn theo yêu cầu — đăng nhập bằng cách gõ tay tài khoản/mật khẩu ở bảng trên, hoặc tự tạo tài khoản mới.
 
 > ⚠️ Đây là mật khẩu test công khai. Trước khi dùng thật cho người khác, hãy đổi mật khẩu
 > (xem mục dưới) và đặt `JWT_SECRET` riêng.
