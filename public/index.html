@@ -12,15 +12,22 @@
   <div class="login-box">
     <div class="logo">💬</div>
     <h1>App Nhắn Tin</h1>
-    <p class="sub">Đăng nhập bằng tài khoản được cấp — không có đăng ký tự do</p>
+    <p class="sub">Đăng nhập bằng tài khoản của bạn</p>
     <form id="loginForm">
       <input id="username" placeholder="Tài khoản" autocomplete="username" required>
       <input id="password" type="password" placeholder="Mật khẩu" autocomplete="current-password" required>
       <button type="submit">Đăng nhập</button>
       <p id="loginError" class="error"></p>
     </form>
-    <p class="sub">Chạm để điền nhanh tài khoản test:</p>
-    <div id="quickAccounts"></div>
+    <p class="sub">Chưa có tài khoản? <a href="#" id="showRegister">Tạo tài khoản</a></p>
+    <form id="registerForm" hidden>
+      <input id="regName" placeholder="Tên hiển thị" autocomplete="name" required>
+      <input id="regUsername" placeholder="Tài khoản (chữ thường, số, dấu _)" autocomplete="username" required>
+      <input id="regPassword" type="password" placeholder="Mật khẩu (ít nhất 6 ký tự)" autocomplete="new-password" required>
+      <button type="submit">Tạo tài khoản</button>
+      <p id="registerError" class="error"></p>
+      <p class="sub"><a href="#" id="showLogin">Quay lại đăng nhập</a></p>
+    </form>
   </div>
 </section>
 
