@@ -9,6 +9,10 @@ const STICKER_PACKS = [
   { name: '🐶 Shiba', files: Array.from({ length: 12 }, (_, i) => `/stickers/shiba-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐤 Gà vàng', files: Array.from({ length: 12 }, (_, i) => `/stickers/ga-${String(i + 1).padStart(2, '0')}.png`) },
   { name: '🐰 Thỏ', files: Array.from({ length: 12 }, (_, i) => `/stickers/tho-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐼 Panda meme', files: Array.from({ length: 12 }, (_, i) => `/stickers/panda-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🍄 Đầu nấm', files: Array.from({ length: 12 }, (_, i) => `/stickers/nam-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐸 Ếch ngáo', files: Array.from({ length: 12 }, (_, i) => `/stickers/ech-${String(i + 1).padStart(2, '0')}.png`) },
+  { name: '🐷 Heo bựa', files: Array.from({ length: 12 }, (_, i) => `/stickers/heo-${String(i + 1).padStart(2, '0')}.png`) },
 ];
 /* GIF dong that tu Giphy CDN (URL da kiem chung song lau dai); anh nho 200.gif dung cho khay chon */
 const GIFS = ['3o7TKMt1VVNkHV2PaE','l0HlBO7eyXzSZkJri','xT9IgG50Fb7Mi0prBC','26ufdipOqU2lhNA4g','111ebonMs90YLu','l4KihuqeuJEi9qLSM','3o85xwxr06ImoToz3C','mcJohbfGPATW8','13CoXDiaCcCoyk','ICOgUNjpvO0PC','6uGhT1O9pxc3p37nEv','l3q2K5jinAlChoCLS','ASd0Ukj0y3qMM','dzaUX7CAG0Ihi',
