@@ -14,37 +14,69 @@ if (!process.env.JWT_SECRET) {
   console.warn('[CANH BAO] Chua dat JWT_SECRET - dang dung gia tri tam. Hay dat JWT_SECRET tren host truoc khi dung that.');
 }
 
+// Luu tru du lieu:
+// - Co DATABASE_URL: dung Postgres (Neon) - tai khoan va tin nhan ben vung, khong mat khi deploy lai.
+// - Khong co: dung file JSON trong data/ (chi de chay local - host mien phi xoa sach file nay moi lan deploy).
+const DATABASE_URL = process.env.DATABASE_URL || '';
+let pool = null;
+if (DATABASE_URL) {
+  const { Pool } = require('pg');
+  pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+}
+
 const DATA_DIR = path.join(__dirname, 'data');
 const MSG_FILE = path.join(DATA_DIR, 'messages.json');
+const USER_FILE = path.join(DATA_DIR, 'users.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let messages = [];
-try {
-  if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8'));
-  if (!Array.isArray(messages)) messages = [];
-} catch { messages = []; }
+let registeredUsers = [];
+const userByName = new Map(USERS.map((u) => [u.username, u]));
+const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
+let seq = 0;
 
 let saveTimer = null;
-function persist() {
+function persist(msg) {
+  if (pool) {
+    pool.query(
+      'INSERT INTO messages(id, sender, recipient, type, content, at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING',
+      [msg.id, msg.from, msg.to, msg.type, msg.content, msg.at]
+    ).catch((e) => console.error('Luu tin nhan (DB) loi:', e.message));
+    return;
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try { fs.writeFileSync(MSG_FILE, JSON.stringify(messages)); } catch (e) { console.error('Luu tin nhan loi:', e.message); }
   }, 150);
 }
 
-const USER_FILE = path.join(DATA_DIR, 'users.json');
-let registeredUsers = [];
-try {
-  if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8'));
-  if (!Array.isArray(registeredUsers)) registeredUsers = [];
-} catch { registeredUsers = []; }
-const userByName = new Map(USERS.map((u) => [u.username, u]));
-for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
-function saveUsers() {
+function saveUser(u) {
+  if (pool) {
+    pool.query(
+      'INSERT INTO users(username, display_name, password_hash) VALUES($1,$2,$3) ON CONFLICT (username) DO NOTHING',
+      [u.username, u.displayName, u.passwordHash]
+    ).catch((e) => console.error('Luu tai khoan (DB) loi:', e.message));
+    return;
+  }
   try { fs.writeFileSync(USER_FILE, JSON.stringify(registeredUsers)); } catch (e) { console.error('Luu tai khoan loi:', e.message); }
 }
-const publicUser = (u) => ({ username: u.username, displayName: u.displayName });
-let seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
+
+async function initStorage() {
+  if (pool) {
+    await pool.query('CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL)');
+    await pool.query('CREATE TABLE IF NOT EXISTS messages(id BIGINT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, at BIGINT NOT NULL)');
+    const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
+    registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
+    const rm = await pool.query('SELECT id, sender, recipient, type, content, at FROM messages ORDER BY id ASC');
+    messages = rm.rows.map((r) => ({ id: Number(r.id), from: r.sender, to: r.recipient, type: r.type, content: r.content, at: Number(r.at) }));
+    console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky va ${messages.length} tin nhan tu Postgres`);
+  } else {
+    try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
+    try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
+  }
+  for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
+  seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
+}
 
 const app = express();
 app.use(express.json({ limit: '12mb' }));
@@ -72,7 +104,7 @@ app.post('/api/login', (req, res) => {
   res.json({ token, user: publicUser(u) });
 });
 
-// Tao tai khoan moi - luu tren server (data/users.json), mat khau chi luu bcrypt hash
+// Tao tai khoan moi - luu tren server (Postgres neu co DATABASE_URL, khong thi data/users.json), mat khau chi luu bcrypt hash
 app.post('/api/register', (req, res) => {
   const { username, password, displayName } = req.body || {};
   const un = String(username || '').trim().toLowerCase();
@@ -84,7 +116,7 @@ app.post('/api/register', (req, res) => {
   const u = { username: un, displayName: dn, passwordHash: bcrypt.hashSync(String(password), 10) };
   registeredUsers.push(u);
   userByName.set(un, u);
-  saveUsers();
+  saveUser(u);
   const token = jwt.sign({ username: un }, JWT_SECRET, { expiresIn: '30d' });
   res.status(201).json({ token, user: publicUser(u) });
 });
@@ -147,7 +179,7 @@ io.on('connection', (socket) => {
     const msg = { id: ++seq, from: me, to, type, content, at: Date.now() };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
-    persist();
+    persist(msg);
     emitToUser(to, 'message:new', msg);
     ack?.({ ok: true, message: msg });
   });
@@ -171,4 +203,6 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => console.log(`App nhan tin dang chay tai http://localhost:${PORT}`));
+initStorage()
+  .then(() => server.listen(PORT, () => console.log(`App nhan tin dang chay tai http://localhost:${PORT}`)))
+  .catch((e) => { console.error('Loi khoi tao luu tru, khong the khoi dong:', e.message); process.exit(1); });
