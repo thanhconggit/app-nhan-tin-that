@@ -29,12 +29,11 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 
 | Tài khoản | Mật khẩu | Tên hiển thị |
 |---|---|---|
-| nguyen | 123456 | Nguyễn Văn An |
 | lananh | 123456 | Trần Lan Anh |
-| minhduc | 123456 | Lê Minh Đức |
-| phuongthao | 123456 | Phạm Phương Thảo |
-| hoangnam | 123456 | Vũ Hoàng Nam |
 | admin | admin123 | Quản trị viên |
+
+(06/11/2026: đã xóa 4 tài khoản test nguyen, minhduc, phuongthao, hoangnam theo yêu cầu của chủ app —
+các tài khoản đó không còn đăng nhập được và không còn hiện trong danh bạ.)
 
 Các thẻ điền nhanh tài khoản test trên màn hình đăng nhập đã được ẩn theo yêu cầu — đăng nhập bằng cách gõ tay tài khoản/mật khẩu ở bảng trên, hoặc tự tạo tài khoản mới.
 
@@ -64,7 +63,7 @@ npm start
 Mở http://localhost:3000 — cổng mặc định là 3000, đổi bằng biến `PORT` (ví dụ `PORT=8080 npm start`).
 
 Cách test 2 người trên cùng một máy: mở app ở **2 trình duyệt khác nhau** (hoặc 1 cửa sổ thường + 1 cửa sổ ẩn danh),
-đăng nhập `nguyen` ở bên này và `lananh` ở bên kia, rồi nhắn / gọi qua lại.
+đăng nhập `lananh` ở bên này và `admin` ở bên kia, rồi nhắn / gọi qua lại.
 
 Test tự động 2 client (đã có sẵn, chạy lại được): để server đang chạy, mở terminal khác:
 
