@@ -112,6 +112,48 @@ function emitAck(socket, ev, payload) {
   const badGroup = await fetch(BASE + '/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ta }, body: JSON.stringify({ name: 'Thieu thanh vien', members: [newUser] }) });
   ok(badGroup.status === 400, 'Tao nhom voi chi 1 thanh vien bi tu choi', '(HTTP ' + badGroup.status + ')');
 
+  // --- Cam xuc tin nhan (reactions) ---
+  const reacted1 = waitEvent(A, 'message:reacted', (p) => p.id === m1.id, 8000, 'A nhan reacted');
+  const ackR1 = await emitAck(B, 'message:react', { id: m1.id, emoji: '❤️' });
+  const rp1 = await reacted1;
+  ok(ackR1.ok === true && rp1.reactions?.[newUser] === '❤️', 'B tha ❤️ vao tin cua A, A nhan duoc');
+
+  const reacted2 = waitEvent(A, 'message:reacted', (p) => p.id === m1.id, 8000, 'A nhan reacted (go)');
+  const ackR2 = await emitAck(B, 'message:react', { id: m1.id, emoji: '❤️' });
+  const rp2 = await reacted2;
+  ok(ackR2.ok === true && Object.keys(rp2.reactions || {}).length === 0, 'B bam lai ❤️ -> go cam xuc');
+
+  const ackR3 = await emitAck(B, 'message:react', { id: m1.id, emoji: '🚀' });
+  ok(ackR3.ok === false, 'Emoji ngoai danh sach bi tu choi');
+
+  // --- Thu hoi tin nhan ---
+  const updated1 = waitEvent(B, 'message:updated', (m) => m.id === m1.id && m.type === 'recalled', 8000, 'B nhan message:updated');
+  const ackRec = await emitAck(A, 'message:recall', { id: m1.id });
+  const upd = await updated1;
+  ok(ackRec.ok === true && upd.content === '', 'A thu hoi tin nhan, B thay da thu hoi');
+
+  const ackRec2 = await emitAck(A, 'message:recall', { id: m2.id });
+  ok(ackRec2.ok === false, 'Thu hoi tin cua nguoi khac bi tu choi');
+
+  const rHist2 = await fetch(BASE + '/api/messages/' + newUser, { headers: { Authorization: 'Bearer ' + ta } });
+  const hist2 = (await rHist2.json()).messages || [];
+  const recMsg = hist2.find((m) => m.id === m1.id);
+  ok(recMsg && recMsg.type === 'recalled' && recMsg.content === '', 'Lich su tren server cung da thu hoi');
+
+  // --- Xoa nhom ---
+  const delByMember = await fetch(BASE + '/api/groups/' + gid, { method: 'DELETE', headers: { Authorization: 'Bearer ' + tb } });
+  ok(delByMember.status === 403, 'Thanh vien khong phai nguoi tao khong xoa duoc nhom', '(HTTP ' + delByMember.status + ')');
+
+  const grpDeleted = waitEvent(B, 'group:deleted', (d) => d.id === gid, 8000, 'B nhan group:deleted');
+  const delByCreator = await fetch(BASE + '/api/groups/' + gid, { method: 'DELETE', headers: { Authorization: 'Bearer ' + ta } });
+  await grpDeleted;
+  ok(delByCreator.status === 200, 'Nguoi tao xoa nhom thanh cong, thanh vien nhan thong bao', '(HTTP ' + delByCreator.status + ')');
+
+  const gList2 = await (await fetch(BASE + '/api/groups', { headers: { Authorization: 'Bearer ' + tb } })).json();
+  ok(!(gList2.groups || []).some((g) => g.id === gid), 'Nhom da bien mat khoi danh sach cua B');
+  const gHist2 = await fetch(BASE + '/api/groups/' + gid + '/messages', { headers: { Authorization: 'Bearer ' + tc } });
+  ok(gHist2.status === 404, 'Lich su nhom da xoa khong con doc duoc', '(HTTP ' + gHist2.status + ')');
+
   // --- WebRTC signaling relay ---
   const incoming = waitEvent(B, 'call:incoming', (d) => d.from === 'admin', 8000, 'B nhan cuoc goi den');
   A.emit('call:offer', { to: newUser, offer: { type: 'offer', sdp: 'fake-sdp-offer' }, callType: 'voice' });
