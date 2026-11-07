@@ -137,7 +137,7 @@ button{touch-action:manipulation}
 .msg.mine .fwd-label{color:#cfe2ff}
 .msg.flash{animation:flashBg 1.2s ease}
 @keyframes flashBg{0%,60%{background:#ffe58a}100%{}}
-#profileView,#forwardView,#savedView{position:fixed;inset:0;background:rgba(11,21,38,.55);display:flex;align-items:center;justify-content:center;z-index:56;padding:16px}
+#profileView,#forwardView,#friendsView{position:fixed;inset:0;background:rgba(11,21,38,.55);display:flex;align-items:center;justify-content:center;z-index:56;padding:16px}
 .profile-box{text-align:center}
 .profile-box .muted{margin:2px 0}
 .pf-btns{justify-content:center;flex-wrap:wrap}
@@ -146,14 +146,15 @@ button{touch-action:manipulation}
 .pf-member .muted{font-size:12.5px}
 #forwardList{display:grid;gap:6px;max-height:52dvh;overflow:auto}
 .fwd-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:7px 9px;font-size:15px}
-#savedList{display:grid;gap:10px;max-height:56dvh;overflow:auto}
-.sv-item{border:1px solid #e3eaf6;border-radius:10px;padding:8px 10px}
-.sv-head{display:flex;align-items:center;gap:8px}
-.sv-head .muted{font-size:12px}
-.sv-unsave{margin-left:auto;font-size:12.5px;padding:4px 9px;min-height:34px}
-.sv-body{margin-top:5px;word-break:break-word}
-.sv-img{max-width:150px;max-height:150px;border-radius:8px}
-.sv-big{font-size:30px}
+/* Ket ban & loi moi */
+.friends-box{max-height:86dvh;overflow:auto}
+.fr-label{font-weight:700;color:#48607f;margin:12px 0 2px;font-size:14px}
+.fr-row{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid #f0f3fa}
+.fr-row .grow{flex:1}
+.fr-act{padding:6px 12px;font-size:13.5px;min-height:36px}
+.fr-act.go{background:#0068ff;color:#fff;border-color:#0068ff}
+#friendsBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#eaf1ff;border-color:#c9d6ee;font-weight:600;color:#0050c8}
+#friendBadge{position:static;margin-left:2px}
 /* ===== Sticker anh that (them 06/11/2026) ===== */
 .msg.nobg{background:transparent;box-shadow:none;padding:2px}
 .msg.nobg .time{color:#6b7a90}
@@ -167,7 +168,11 @@ button{touch-action:manipulation}
   #panelBody button.stkpick img{width:58px;height:58px}
 }
 /* ===== Nhom, tieng thong bao, sticker/GIF that (them 06/11/2026) ===== */
-#newGroupBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#eaf1ff;border-color:#c9d6ee;font-weight:600;color:#0050c8}
+/* Nut tao nhom: tron nho gon, than thien, nam canh o tim kiem */
+.search-row{display:flex;gap:8px;align-items:center;margin:10px}
+.search-row #search{margin:0;flex:1;width:auto}
+#newGroupBtn.round-btn{width:42px;height:42px;min-height:42px;min-width:42px;margin:0;padding:0;border:none;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00a8ff);color:#fff;font-size:24px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(90,110,255,.4);cursor:pointer}
+#newGroupBtn.round-btn:active{transform:scale(.93)}
 .list-label{padding:10px 12px 4px;font-size:12px;font-weight:700;color:#6b7a90;text-transform:uppercase;letter-spacing:.4px}
 .avatar.gav{background:linear-gradient(135deg,#7c5cff,#00c2ff)}
 .sender-name{font-size:12px;font-weight:700;color:#7c5cff;margin-bottom:2px}
@@ -186,5 +191,14 @@ button{touch-action:manipulation}
   #panelBody img.gifthumb{width:calc((100vw - 52px)/3);height:calc((100vw - 52px)/3)}
   .ptab{min-height:40px;flex:1}
   .group-box{padding:16px}
-  #newGroupBtn{min-height:44px}
 }
+/* ===== Tim kiem tin nhan + hop loi quyen goi (them 07/11/2026) ===== */
+#msgSearchBar{display:flex;gap:6px;align-items:center;padding:8px 10px;background:#f2f7ff;border-bottom:1px solid #dde8fa}
+#msgSearchBar[hidden]{display:none}
+#msgSearchInput{flex:1}
+#msgSearchCount{font-size:13px;color:#48607f;min-width:52px;text-align:center}
+#msgSearchBar button{min-width:36px;min-height:36px;padding:4px 8px}
+.msg.hit{box-shadow:inset 0 0 0 2px #ffb020}
+.msg.hit.current{box-shadow:inset 0 0 0 2px #ff8a00;background:#ffeec2}
+#callError{background:#fff4f4;border:1px solid #ffc7c7;color:#8c1d1d;border-radius:12px;padding:12px 14px;margin-top:14px;max-width:min(440px,92vw);z-index:1}
+#callErrorText{white-space:pre-line;text-align:left;font-size:14px;line-height:1.55;margin:0 0 10px}
