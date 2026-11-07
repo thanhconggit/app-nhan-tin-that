@@ -38,12 +38,14 @@
     <header class="me">
       <div class="avatar" id="myAvatar">?</div>
       <div><div id="myName"></div><div class="muted" id="myUser"></div></div>
-      <button id="soundBtn" title="Bật/tắt tiếng thông báo">🔊</button>
+      <button id="soundBtn" title="Bật/tắt thông báo">🔔</button>
       <button id="logoutBtn" title="Đăng xuất">⏻</button>
     </header>
-    <input id="search" placeholder="Tìm người hoặc nhóm…">
-    <button id="newGroupBtn">➕ Tạo nhóm</button>
-    <button id="savedBtn">🔖 Tin đã lưu</button>
+    <div class="search-row">
+      <input id="search" placeholder="Tìm bạn hoặc nhóm…">
+      <button id="newGroupBtn" class="round-btn" title="Tạo nhóm mới">＋</button>
+    </div>
+    <button id="friendsBtn">🤝 Bạn bè &amp; lời mời <span id="friendBadge" class="badge" hidden></span></button>
     <div id="convList"></div>
   </aside>
 
@@ -54,10 +56,18 @@
         <button id="backBtn">←</button>
         <div class="avatar" id="peerAvatar">?</div>
         <div class="grow"><div id="peerName"></div><div class="muted" id="peerStatus"></div></div>
+        <button id="msgSearchBtn" title="Tìm tin nhắn trong cuộc trò chuyện">🔍</button>
         <button id="voiceCallBtn" title="Gọi thoại">📞</button>
         <button id="videoCallBtn" title="Gọi video">🎥</button>
         <button id="groupDelBtn" title="Xoá nhóm" hidden>🗑️</button>
       </header>
+      <div id="msgSearchBar" hidden>
+        <input id="msgSearchInput" placeholder="Tìm trong cuộc trò chuyện này…">
+        <span id="msgSearchCount"></span>
+        <button id="msgSearchPrev" title="Kết quả cũ hơn">↑</button>
+        <button id="msgSearchNext" title="Kết quả mới hơn">↓</button>
+        <button id="msgSearchClose" title="Đóng tìm kiếm">✕</button>
+      </div>
       <div id="messages"></div>
       <div id="typing" class="muted"></div>
       <div id="replyBar" hidden>
@@ -114,6 +124,10 @@
     <button id="camBtn">📷 Tắt camera</button>
     <button id="endCallBtn" class="danger">📵 Kết thúc</button>
   </div>
+  <div id="callError" hidden>
+    <p id="callErrorText"></p>
+    <button id="callErrorClose">Đã hiểu</button>
+  </div>
 </div>
 
 <div id="incomingView" hidden>
@@ -137,7 +151,6 @@
     </div>
     <button id="mmReply">💬 Trả lời tin nhắn</button>
     <button id="mmForward">➡️ Chia sẻ</button>
-    <button id="mmSave">🔖 Lưu tin nhắn</button>
     <button id="mmRecall">↩️ Thu hồi tin nhắn</button>
     <button id="mmDelete">🗑️ Xoá phía tôi</button>
     <button id="mmClose">Đóng</button>
@@ -174,13 +187,13 @@
   </div>
 </div>
 
-<!-- ===== Tin nhan da luu ===== -->
-<div id="savedView" hidden>
-  <div class="group-box saved-box">
-    <h2>🔖 Tin nhắn đã lưu</h2>
-    <div id="savedList"></div>
+<!-- ===== Ban be & loi moi ket ban ===== -->
+<div id="friendsView" hidden>
+  <div class="group-box friends-box">
+    <h2>🤝 Bạn bè &amp; lời mời</h2>
+    <div id="friendsBody"></div>
     <div class="call-btns">
-      <button id="savedClose">Đóng</button>
+      <button id="friendsClose">Đóng</button>
     </div>
   </div>
 </div>
