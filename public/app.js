@@ -203,10 +203,21 @@ function setAvatarEl(el, user) {
   } else el.textContent = (user.displayName || user.username || '?')[0];
 }
 
+function convRow(u, stranger) {
+  const on = online.has(u.username); const last = lastMsg['u:' + u.username];
+  return `<div class="conv ${stranger ? 'stranger' : ''} ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
+    <div class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : escapeHtml((u.displayName || '?')[0])}<span class="dot ${on ? 'on' : ''}"></span></div>
+    <div class="info"><div><b>${escapeHtml(u.displayName)}</b>${stranger ? '<span class="stranger-tag">Người lạ</span>' : ''}</div>
+    <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
+    ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
+}
 function renderList() {
   const q = $('search').value.toLowerCase();
   const gs = groups.filter((g) => g.name.toLowerCase().includes(q));
-  const us = users.filter((u) => u.displayName.toLowerCase().includes(q) || u.username.includes(q));
+  const match = (u) => u.displayName.toLowerCase().includes(q) || u.username.includes(q);
+  const friends = users.filter((u) => friendsSet.has(u.username) && match(u));
+  /* Nguoi la: chua ket ban; chi hien khi da tung tro chuyen (hoac dang tim kiem de bat dau) */
+  const strangers = users.filter((u) => !friendsSet.has(u.username) && match(u) && (q !== '' || u.hasConvo || lastMsg['u:' + u.username]));
   let h = '';
   if (gs.length) {
     h += `<div class="list-label">Nhóm</div>` + gs.map((g) => {
@@ -219,14 +230,10 @@ function renderList() {
         ${unread['g:' + g.id] ? `<span class="badge">${unread['g:' + g.id]}</span>` : ''}</div>`;
     }).join('');
   }
-  h += `<div class="list-label">Mọi người</div>` + (us.length ? us.map((u) => {
-    const on = online.has(u.username); const last = lastMsg['u:' + u.username];
-    return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
-      <div class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
-      <div class="info"><div><b>${u.displayName}</b></div>
-      <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
-      ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
-  }).join('') : '<div class="muted" style="padding:4px 14px 10px">Không tìm thấy ai khớp.</div>');
+  h += `<div class="list-label">Bạn bè</div>` + (friends.length ? friends.map((u) => convRow(u, false)).join('') : '<div class="muted" style="padding:4px 14px 10px">Chưa có bạn bè nào ở đây.</div>');
+  if (strangers.length) {
+    h += `<div class="list-label">👤 Tin nhắn từ người lạ</div>` + strangers.map((u) => convRow(u, true)).join('');
+  }
   $('convList').innerHTML = h;
 }
 $('search').oninput = renderList;
