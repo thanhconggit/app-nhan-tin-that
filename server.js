@@ -485,7 +485,7 @@ io.on('connection', (socket) => {
       return ack?.({ ok: true, message: msg });
     }
     if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
-    if (!areFriends(me, to)) return ack?.({ ok: false, error: 'Hãy kết bạn trước khi nhắn tin' });
+    /* Nhan tin 1-1: mo cho moi nguoi (ke ca chua ket ban). Chi CUOC GOI moi yeu cau da ket ban (chan o call:offer). */
     const msg = { id: ++seq, from: me, to, type, content, at: Date.now(), reactions: {}, ...(replySnap ? { replyTo: replySnap } : {}), ...(forwarded ? { forwarded: true } : {}) };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
