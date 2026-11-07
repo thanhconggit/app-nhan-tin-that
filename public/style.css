@@ -169,10 +169,12 @@ button{touch-action:manipulation}
 }
 /* ===== Nhom, tieng thong bao, sticker/GIF that (them 06/11/2026) ===== */
 /* Nut tao nhom: tron nho gon, than thien, nam canh o tim kiem */
-.search-row{display:flex;gap:8px;align-items:center;margin:10px}
-.search-row #search{margin:0;flex:1;width:auto}
-.search-row .round-btn{width:42px;height:42px;min-height:42px;min-width:42px;margin:0;padding:0;border:none;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00a8ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(90,110,255,.4);cursor:pointer}
-.search-row .round-btn svg{width:23px;height:23px}
+.search-row{display:flex;gap:6px;align-items:center;margin:10px}
+.search-row #search{margin:0;flex:1;width:auto;min-width:0}
+.search-row .round-btn{width:36px;height:36px;min-height:36px;min-width:36px;margin:0;padding:0;border:none;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00a8ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 7px rgba(90,110,255,.35);cursor:pointer;flex:none}
+.search-row .round-btn svg{width:19px;height:19px}
+.stranger-tag{font-size:10.5px;background:#edf1f7;color:#7286a0;border-radius:6px;padding:1px 5px;margin-left:6px;vertical-align:1px;font-weight:600}
+.conv.stranger .avatar{filter:grayscale(.25)}
 .search-row .round-btn.add{background:linear-gradient(135deg,#00b894,#00cec9);box-shadow:0 3px 10px rgba(0,184,148,.4)}
 .search-row .round-btn:active{transform:scale(.93)}
 #addFriendInput{width:100%;margin:2px 0 4px}
