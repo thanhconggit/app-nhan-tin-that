@@ -351,7 +351,13 @@ app.delete('/api/friends/:username', authRest, (req, res) => {
 });
 
 app.get('/api/users', authRest, (req, res) => {
-  res.json({ users: [...userByName.values()].map((u) => ({ ...publicUser(u), relation: relationOf(req.username, u.username) })), online: [...onlineUsers()] });
+  const convoPeers = new Set();
+  for (const m of messages) {
+    if (m.groupId) continue;
+    if (m.from === req.username) convoPeers.add(m.to);
+    else if (m.to === req.username) convoPeers.add(m.from);
+  }
+  res.json({ users: [...userByName.values()].map((u) => ({ ...publicUser(u), relation: relationOf(req.username, u.username), hasConvo: convoPeers.has(u.username) })), online: [...onlineUsers()] });
 });
 
 app.get('/api/messages/:peer', authRest, (req, res) => {
