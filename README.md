@@ -38,6 +38,8 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
   cho nhau. Thêm bạn bằng cách gõ đúng **@tên tài khoản** trong mục "🤝 Bạn bè & lời mời" (hoặc bấm nút
   icon người-+ cạnh ô tìm kiếm); đồng ý/từ chối lời mời và huỷ kết bạn cũng ở đó (tài khoản có từ trước
   khi nâng cấp được tự kết bạn với nhau). Nút tạo nhóm là nút tròn icon nhóm-người-+ cạnh nút thêm bạn.
+  Hội thoại với người chưa kết bạn nằm riêng ở mục **“👤 Tin nhắn từ người lạ”** trong danh sách chat
+  (kết bạn xong sẽ tự chuyển lên mục Bạn bè).
 - **Tìm kiếm tin nhắn** trong từng cuộc trò chuyện (nút 🔍, bôi sáng kết quả, nhảy qua lại bằng ↑ ↓) và
   **bật/tắt thông báo** toàn cục bằng nút 🔔/🔕 (tắt cả chuông lẫn thông báo hệ thống).
 - **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
