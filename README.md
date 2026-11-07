@@ -40,6 +40,11 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
   khi nâng cấp được tự kết bạn với nhau). Nút tạo nhóm là nút tròn icon nhóm-người-+ cạnh nút thêm bạn.
   Hội thoại với người chưa kết bạn nằm riêng ở mục **“👤 Tin nhắn từ người lạ”** trong danh sách chat
   (kết bạn xong sẽ tự chuyển lên mục Bạn bè).
+- **Thông báo khi offline (Web Push):** người đang tắt app vẫn nhận được thông báo đẩy có tin nhắn mới
+  (máy chủ chỉ gửi push cho người không online; khoá VAPID tự sinh một lần và lưu trong database).
+  Mở lại app sẽ thấy đúng số tin chưa đọc của từng cuộc trò chuyện (trạng thái đã đọc lưu trên server,
+  mở cuộc trò chuyện là tự đánh dấu đã đọc) kèm thông báo tổng kết số tin mới trong lúc vắng mặt.
+  Trên iPhone cần "Thêm vào màn hình chính" (PWA) và iOS 16.4+ mới nhận được push khi đóng app.
 - **Tìm kiếm tin nhắn** trong từng cuộc trò chuyện (nút 🔍, bôi sáng kết quả, nhảy qua lại bằng ↑ ↓) và
   **bật/tắt thông báo** toàn cục bằng nút 🔔/🔕 (tắt cả chuông lẫn thông báo hệ thống).
 - **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
