@@ -83,6 +83,7 @@ $('soundBtn').onclick = () => {
   $('soundBtn').textContent = soundOn ? '🔔' : '🔕';
   toast(soundOn ? 'Đã bật thông báo' : 'Đã tắt thông báo', soundOn ? 'Có chuông + thông báo khi có tin nhắn mới' : 'Sẽ không có chuông hay thông báo đẩy nữa');
   if (!soundOn) { stopRing(); teardownPush(); } else { ding(); setupPush(); }
+  setTimeout(updatePushBtn, 800);
 };
 
 $('loginForm').addEventListener('submit', async (e) => {
@@ -165,6 +166,7 @@ async function enterApp() {
   wireCallSocket();
   renderList();
   setupPush();
+  updatePushBtn();
   if (pendingConv) { const c = pendingConv; pendingConv = null; openConvByKey(c); }
 }
 
@@ -197,20 +199,76 @@ function urlB64ToUint8(b64) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 async function setupPush() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
-    if (!soundOn || !('Notification' in window) || Notification.permission !== 'granted') return;
+    await navigator.serviceWorker.register('/sw.js');
+    const reg = await navigator.serviceWorker.ready; /* cho SW active xong moi subscribe duoc */
+    if (!soundOn || !('Notification' in window) || Notification.permission !== 'granted') return false;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       const kr = await fetch('/api/push/key', { headers: { Authorization: 'Bearer ' + token } });
       const { publicKey } = await kr.json();
-      if (!publicKey) return;
+      if (!publicKey) return false;
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(publicKey) });
     }
-    await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(sub) });
-  } catch { /* trinh duyet khong ho tro hoac chua cap quyen */ }
+    const r = await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(sub) });
+    return r.ok;
+  } catch { return false; }
 }
+/* Chan doan moi truong push: mo trong app Zalo/Facebook, iPhone chua cai PWA, trinh duyet cu */
+function pushEnvIssue() {
+  const ua = navigator.userAgent || '';
+  if (/Zalo|FBAN|FBAV|FB_IAB|Instagram|Line\//i.test(ua)) return 'inapp';
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  if (isIOS && !standalone) return 'ios';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  return null;
+}
+async function updatePushBtn() {
+  const btn = $('pushBtn');
+  if (!btn || !me) return;
+  const issue = pushEnvIssue();
+  if (issue) { btn.dataset.mode = issue; btn.textContent = '🔔 Bật thông báo tin nhắn mới'; btn.hidden = false; return; }
+  if (Notification.permission === 'denied') { btn.dataset.mode = 'blocked'; btn.textContent = '🔕 Thông báo bị chặn — bấm xem cách bật'; btn.hidden = false; return; }
+  if (Notification.permission !== 'granted') { btn.dataset.mode = 'enable'; btn.textContent = '🔔 Bật thông báo tin nhắn mới'; btn.hidden = false; return; }
+  btn.dataset.mode = 'enable'; btn.textContent = '🔔 Bật thông báo tin nhắn mới'; btn.hidden = false;
+  try {
+    const r = await fetch('/api/push/status', { headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json();
+    if (d.subscriptions > 0) { btn.dataset.mode = 'test'; btn.textContent = '🔔 Thông báo đã bật ✓ (bấm để gửi thử)'; }
+  } catch { /* bo qua */ }
+}
+$('pushBtn').onclick = async () => {
+  const mode = $('pushBtn').dataset.mode || 'enable';
+  if (mode === 'test') {
+    toast('Đang gửi thông báo thử…', 'Nhìn lên khay thông báo của máy nhé');
+    try {
+      const r = await fetch('/api/push/test', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Gửi thử thất bại');
+      toast('Đã gửi thông báo thử', `Máy chủ đã đẩy thành công tới ${d.delivered}/${d.subscriptions} thiết bị của bạn`);
+    } catch (e) { toast('Không gửi thử được', e.message); }
+    return;
+  }
+  if (mode === 'inapp') { toast('⚠️ Hãy mở bằng trình duyệt thật', 'Bạn đang mở link bên trong Zalo/Facebook — trình duyệt trong app KHÔNG nhận được thông báo đẩy. Bấm dấu ⋮/⋯ rồi chọn “Mở bằng trình duyệt” (Chrome/Safari), đăng nhập lại rồi bấm nút này.'); return; }
+  if (mode === 'ios') { toast('📱 iPhone cần cài app vào màn hình chính', 'Bấm nút Chia sẻ ⬆️ → “Thêm vào màn hình chính” → mở app từ icon vừa tạo → đăng nhập → bấm lại nút Bật thông báo. (iOS 16.4 trở lên)'); return; }
+  if (mode === 'unsupported') { toast('Trình duyệt chưa hỗ trợ', 'Hãy mở link bằng Chrome hoặc Safari bản mới nhất để nhận thông báo khi tắt app.'); return; }
+  if (mode === 'blocked' || Notification.permission === 'denied') {
+    toast('🔕 Thông báo đang bị trình duyệt chặn', 'Cách bật: bấm biểu tượng 🔒 ở đầu thanh địa chỉ → Quyền / Cài đặt trang web → mục Thông báo → chọn “Cho phép” → tải lại trang → bấm lại nút này.');
+    return;
+  }
+  if (!soundOn) { soundOn = true; localStorage.setItem('notif', 'on'); $('soundBtn').textContent = '🔔'; }
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') { toast('Chưa được cấp quyền', 'Hãy chọn “Cho phép” khi trình duyệt hỏi nhé.'); updatePushBtn(); return; }
+  const okSub = await setupPush();
+  await updatePushBtn();
+  if (okSub) {
+    toast('✅ Đã bật thông báo!', 'Mình vừa gửi 1 thông báo thử — kiểm tra khay thông báo của máy nhé');
+    fetch('/api/push/test', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }).catch(() => {});
+  } else toast('Chưa đăng ký được', 'Thử tải lại trang rồi bấm lại nút này giúp mình.');
+};
 async function teardownPush() {
   try {
     if (!('serviceWorker' in navigator)) return;
