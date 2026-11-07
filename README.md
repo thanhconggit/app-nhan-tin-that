@@ -31,10 +31,14 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 - **Hồ sơ & avatar**: bấm vào avatar/tên của mình để xem hồ sơ cá nhân và **đổi ảnh đại diện** (ảnh nén
   128px, lưu bền trên server, mọi người thấy ngay); bấm avatar/tên người đang chat để xem thông tin của họ
   (trạng thái online, gọi nhanh); bấm tiêu đề nhóm để xem thông tin nhóm và danh sách thành viên.
-- **Trả lời, chia sẻ, lưu tin** (trong menu nhấn giữ tin nhắn): **Trả lời** kèm trích dẫn (bấm vào trích dẫn
-  để nhảy tới tin gốc), **Chia sẻ** chuyển tiếp tin tới người/nhóm khác (có nhãn "Đã chia sẻ", server tự sao
-  chép nội dung), **Lưu tin nhắn** vào mục 🔖 Tin đã lưu riêng của bạn (lưu bản chụp nội dung, xem lại/bỏ lưu
-  bất cứ lúc nào, tối đa 200 tin).
+- **Trả lời, chia sẻ tin** (trong menu nhấn giữ tin nhắn): **Trả lời** kèm trích dẫn (bấm vào trích dẫn
+  để nhảy tới tin gốc), **Chia sẻ** chuyển tiếp tin tới bạn bè/nhóm khác (có nhãn "Đã chia sẻ", server tự sao
+  chép nội dung).
+- **Kết bạn & lời mời kết bạn:** phải là bạn bè mới nhắn tin 1-1 và gọi được cho nhau; gửi/đồng ý/từ chối
+  lời mời và huỷ kết bạn ở mục "🤝 Bạn bè & lời mời" (tài khoản có từ trước khi nâng cấp được tự kết bạn
+  với nhau để không ai mất liên lạc). Nút tạo nhóm thu gọn thành nút tròn ＋ cạnh ô tìm kiếm.
+- **Tìm kiếm tin nhắn** trong từng cuộc trò chuyện (nút 🔍, bôi sáng kết quả, nhảy qua lại bằng ↑ ↓) và
+  **bật/tắt thông báo** toàn cục bằng nút 🔔/🔕 (tắt cả chuông lẫn thông báo hệ thống).
 - **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
   thả cảm xúc ❤️ 😂 😮 😢 👍 😡 (bấm lại để gỡ, cảm xúc lưu bền trên server), **thu hồi tin nhắn**
   của mình (cả hai phía đều thấy "Tin nhắn đã thu hồi"), và **xoá phía tôi** (chỉ ẩn trên máy mình,
