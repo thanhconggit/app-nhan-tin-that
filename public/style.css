@@ -171,8 +171,12 @@ button{touch-action:manipulation}
 /* Nut tao nhom: tron nho gon, than thien, nam canh o tim kiem */
 .search-row{display:flex;gap:8px;align-items:center;margin:10px}
 .search-row #search{margin:0;flex:1;width:auto}
-#newGroupBtn.round-btn{width:42px;height:42px;min-height:42px;min-width:42px;margin:0;padding:0;border:none;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00a8ff);color:#fff;font-size:24px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(90,110,255,.4);cursor:pointer}
-#newGroupBtn.round-btn:active{transform:scale(.93)}
+.search-row .round-btn{width:42px;height:42px;min-height:42px;min-width:42px;margin:0;padding:0;border:none;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00a8ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(90,110,255,.4);cursor:pointer}
+.search-row .round-btn svg{width:23px;height:23px}
+.search-row .round-btn.add{background:linear-gradient(135deg,#00b894,#00cec9);box-shadow:0 3px 10px rgba(0,184,148,.4)}
+.search-row .round-btn:active{transform:scale(.93)}
+#addFriendInput{width:100%;margin:2px 0 4px}
+#addFriendResults{margin-bottom:4px}
 .list-label{padding:10px 12px 4px;font-size:12px;font-weight:700;color:#6b7a90;text-transform:uppercase;letter-spacing:.4px}
 .avatar.gav{background:linear-gradient(135deg,#7c5cff,#00c2ff)}
 .sender-name{font-size:12px;font-weight:700;color:#7c5cff;margin-bottom:2px}
