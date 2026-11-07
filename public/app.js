@@ -47,7 +47,8 @@ const groupById = (id) => groups.find((g) => g.id === id);
 
 /* ================= Tieng thong bao (WebAudio, khong can file am thanh) ================= */
 let audioCtx = null;
-let soundOn = localStorage.getItem('sound') !== 'off';
+/* soundOn = cong tac THONG BAO chung: tat thi mat ca tieng chuong/ding lan thong bao he thong */
+let soundOn = (localStorage.getItem('notif') !== null ? localStorage.getItem('notif') : localStorage.getItem('sound')) !== 'off';
 function ensureAudio() {
   if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { audioCtx = null; } }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
@@ -74,11 +75,12 @@ function startRing() {
 }
 function stopRingOnly() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
 function stopRing() { stopRingOnly(); }
-$('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+$('soundBtn').textContent = soundOn ? '🔔' : '🔕';
 $('soundBtn').onclick = () => {
   soundOn = !soundOn;
-  localStorage.setItem('sound', soundOn ? 'on' : 'off');
-  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+  localStorage.setItem('notif', soundOn ? 'on' : 'off');
+  $('soundBtn').textContent = soundOn ? '🔔' : '🔕';
+  toast(soundOn ? 'Đã bật thông báo' : 'Đã tắt thông báo', soundOn ? 'Có chuông + thông báo khi có tin nhắn mới' : 'Sẽ không có chuông hay thông báo đẩy nữa');
   if (!soundOn) stopRing(); else ding();
 };
 
@@ -112,12 +114,12 @@ async function enterApp() {
   $('loginView').hidden = true; $('appView').hidden = false;
   $('myName').textContent = me.displayName; $('myUser').textContent = '@' + me.username;
   setAvatarEl($('myAvatar'), me);
-  loadSaved();
   ensureAudio();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   const r = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + token } });
   users = (await r.json()).users.filter((u) => u.username !== me.username);
   await loadGroups();
+  await loadFriends();
   socket = io({ auth: { token } });
   socket.on('connect', () => socket.emit('presence:get'));
   socket.on('presence', ({ online: o }) => { online = new Set(o); renderList(); if (currentPeer) $('peerStatus').textContent = online.has(currentPeer) ? 'Đang online' : 'Ngoại tuyến'; });
@@ -155,7 +157,18 @@ async function enterApp() {
     renderList();
   });
   socket.on('typing', ({ from }) => { if (from === currentPeer) { $('typing').textContent = 'Đang nhập…'; setTimeout(() => $('typing').textContent = '', 1800); } });
+  socket.on('friends:changed', async () => { await loadFriends(); await refreshUsers(); if (!$('friendsView').hidden) renderFriends(); });
+  socket.on('friend:request', ({ from }) => { notify('🤝 Lời mời kết bạn', `${from.displayName} (@${from.username}) muốn kết bạn với bạn`); ding(); loadFriends(); });
+  socket.on('friend:accepted', ({ by }) => { toast('🤝 Đã thành bạn bè', `Bạn và ${by.displayName} đã là bạn bè — nhắn tin được rồi!`); loadFriends(); refreshUsers(); });
   wireCallSocket();
+  renderList();
+}
+
+async function refreshUsers() {
+  try {
+    const r = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) users = (await r.json()).users.filter((u) => u.username !== me.username);
+  } catch { /* giu danh sach cu */ }
   renderList();
 }
 
@@ -173,6 +186,7 @@ function toast(title, body) {
 }
 function notify(title, body) {
   toast(title, body);
+  if (!soundOn) return; /* da tat thong bao */
   if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification(title, { body });
 }
 
@@ -192,7 +206,7 @@ function setAvatarEl(el, user) {
 function renderList() {
   const q = $('search').value.toLowerCase();
   const gs = groups.filter((g) => g.name.toLowerCase().includes(q));
-  const us = users.filter((u) => u.displayName.toLowerCase().includes(q));
+  const us = users.filter((u) => friendsSet.has(u.username) && u.displayName.toLowerCase().includes(q));
   let h = '';
   if (gs.length) {
     h += `<div class="list-label">Nhóm</div>` + gs.map((g) => {
@@ -205,14 +219,14 @@ function renderList() {
         ${unread['g:' + g.id] ? `<span class="badge">${unread['g:' + g.id]}</span>` : ''}</div>`;
     }).join('');
   }
-  h += `<div class="list-label">Mọi người</div>` + us.map((u) => {
+  h += `<div class="list-label">Bạn bè</div>` + (us.length ? us.map((u) => {
     const on = online.has(u.username); const last = lastMsg['u:' + u.username];
     return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
       <div class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
       <div class="info"><div><b>${u.displayName}</b></div>
       <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
       ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
-  }).join('');
+  }).join('') : '<div class="muted" style="padding:4px 14px 10px">Chưa có bạn bè nào ở đây.<br>Bấm “🤝 Bạn bè &amp; lời mời” ở trên để kết bạn nhé.</div>');
   $('convList').innerHTML = h;
 }
 $('search').oninput = renderList;
@@ -227,12 +241,53 @@ function showChatUI() {
   $('emptyState').hidden = true; $('chatMain').hidden = false;
   document.querySelector('#appView').classList.add('chat-open');
 }
+/* ===== Tim kiem tin nhan trong cuoc tro chuyen dang mo ===== */
+let searchHits = [], searchIdx = -1;
+function searchEls() { return searchHits.map((id) => $('messages').querySelector(`.msg[data-id="${id}"]`)).filter(Boolean); }
+function updateSearchCount() {
+  $('msgSearchCount').textContent = searchHits.length ? `${searchIdx + 1}/${searchHits.length}` : ($('msgSearchInput').value.trim() ? 'Không thấy' : '');
+}
+function markSearch() {
+  $('messages').querySelectorAll('.msg.hit').forEach((el) => el.classList.remove('hit', 'current'));
+  const els = searchEls();
+  els.forEach((el) => el.classList.add('hit'));
+  const cur = els[searchIdx];
+  if (cur) { cur.classList.add('current'); cur.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  updateSearchCount();
+}
+function applyMsgSearch() {
+  const q = $('msgSearchInput').value.trim().toLowerCase();
+  searchHits = []; searchIdx = -1;
+  if (q) {
+    const key = currentKey(); const arr = (key && msgsCache[key]) || [];
+    searchHits = arr.filter((m) => !deletedIds.has(m.id) && (m.type === 'text' || m.type === 'emoji') && String(m.content).toLowerCase().includes(q)).map((m) => m.id);
+    searchIdx = searchHits.length - 1; /* bat dau tu ket qua moi nhat */
+  }
+  markSearch();
+}
+function openMsgSearch() { $('msgSearchBar').hidden = false; $('msgSearchInput').focus(); applyMsgSearch(); }
+function closeMsgSearch() {
+  const bar = $('msgSearchBar'); if (!bar) return;
+  bar.hidden = true; $('msgSearchInput').value = '';
+  searchHits = []; searchIdx = -1;
+  $('messages').querySelectorAll('.msg.hit').forEach((el) => el.classList.remove('hit', 'current'));
+}
+$('msgSearchBtn').onclick = () => { $('msgSearchBar').hidden ? openMsgSearch() : closeMsgSearch(); };
+$('msgSearchClose').onclick = closeMsgSearch;
+$('msgSearchInput').addEventListener('input', applyMsgSearch);
+$('msgSearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('msgSearchPrev').click(); }
+  if (e.key === 'Escape') closeMsgSearch();
+});
+$('msgSearchPrev').onclick = () => { if (searchIdx > 0) { searchIdx--; markSearch(); } };
+$('msgSearchNext').onclick = () => { if (searchIdx < searchHits.length - 1) { searchIdx++; markSearch(); } };
+
 async function openChat(peer) {
   currentPeer = peer; currentGroup = null; unread['u:' + peer] = 0;
   showChatUI();
   $('groupDelBtn').hidden = true;
   $('voiceCallBtn').style.display = ''; $('videoCallBtn').style.display = '';
-  clearReply();
+  clearReply(); closeMsgSearch();
   $('peerName').textContent = peerName(peer);
   setAvatarEl($('peerAvatar'), userObj(peer));
   $('peerStatus').textContent = online.has(peer) ? 'Đang online' : 'Ngoại tuyến';
@@ -248,7 +303,7 @@ async function openChat(peer) {
 async function openGroup(id) {
   const g = groupById(id); if (!g) return;
   currentGroup = id; currentPeer = null; unread['g:' + id] = 0;
-  clearReply();
+  clearReply(); closeMsgSearch();
   showChatUI();
   $('voiceCallBtn').style.display = 'none'; $('videoCallBtn').style.display = 'none';
   $('peerName').textContent = g.name;
@@ -445,11 +500,11 @@ $('panelBody').addEventListener('click', (e) => {
 /* Tao nhom */
 $('newGroupBtn').onclick = () => {
   $('groupError').textContent = ''; $('groupName').value = '';
-  $('memberList').innerHTML = users.map((u) => `<label class="member-row">
+  $('memberList').innerHTML = users.filter((u) => friendsSet.has(u.username)).map((u) => `<label class="member-row">
     <input type="checkbox" value="${u.username}">
-    <span class="avatar">${u.displayName[0]}</span>
+    <span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span>
     <span><b>${escapeHtml(u.displayName)}</b><br><span class="muted">@${u.username}</span></span>
-  </label>`).join('') || '<p class="muted">Chưa có người dùng nào khác.</p>';
+  </label>`).join('') || '<p class="muted">Chưa có bạn bè nào — hãy kết bạn trước khi tạo nhóm nhé.</p>';
   $('groupView').hidden = false;
 };
 $('cancelGroupBtn').onclick = () => { $('groupView').hidden = true; };
@@ -497,7 +552,7 @@ let forwardTarget = null;
 function openForwardPicker() {
   const rows = [
     ...groups.map((g) => `<button class="fwd-row" data-kind="group" data-id="${g.id}"><span class="avatar gav">👥</span><span>${escapeHtml(g.name)}</span></button>`),
-    ...users.map((u) => `<button class="fwd-row" data-kind="dm" data-u="${u.username}"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span><span>${escapeHtml(u.displayName)}</span></button>`),
+    ...users.filter((u) => friendsSet.has(u.username)).map((u) => `<button class="fwd-row" data-kind="dm" data-u="${u.username}"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span><span>${escapeHtml(u.displayName)}</span></button>`),
   ];
   $('forwardList').innerHTML = rows.length ? rows.join('') : '<p class="muted">Chưa có ai để chia sẻ</p>';
   $('forwardView').hidden = false;
@@ -514,36 +569,69 @@ $('forwardList').addEventListener('click', (e) => {
   $('forwardView').hidden = true; forwardTarget = null;
 });
 
-/* Tin da luu */
-let savedList = [], savedIds = new Set();
-async function loadSaved() {
+/* ===== Ket ban & loi moi ket ban ===== */
+let friendsSet = new Set();
+let friendsData = { friends: [], incoming: [], outgoing: [] };
+async function loadFriends() {
   try {
-    const r = await fetch('/api/saved', { headers: { Authorization: 'Bearer ' + token } });
-    if (r.ok) { savedList = (await r.json()).saved || []; savedIds = new Set(savedList.map((e) => e.msgId)); }
-  } catch { /* bo qua */ }
+    const r = await fetch('/api/friends', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) {
+      friendsData = await r.json();
+      friendsSet = new Set(friendsData.friends.map((u) => u.username));
+      const n = friendsData.incoming.length;
+      $('friendBadge').hidden = n === 0; $('friendBadge').textContent = n;
+    }
+  } catch { /* giu trang thai cu */ }
+  renderList();
 }
-function savedContentHtml(s) {
-  if (s.type === 'text') return escapeHtml(s.content);
-  if (s.type === 'emoji') return `<span class="sv-big">${escapeHtml(s.content)}</span>`;
-  if (s.type === 'sticker') return String(s.content).startsWith('/stickers/') ? `<img class="sv-img" src="${s.content}" alt="Sticker">` : `<span class="sv-big">${escapeHtml(s.content)}</span>`;
-  if (s.type === 'gif' || s.type === 'image') return `<img class="sv-img" src="${s.content}" alt="">`;
-  if (s.type === 'audio') return '🎤 Tin nhắn thoại';
-  return escapeHtml(preview(s));
+function frRow(u, actions) {
+  return `<div class="fr-row"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : escapeHtml((u.displayName || '?')[0])}</span><span class="grow"><b>${escapeHtml(u.displayName)}</b><br><span class="muted">@${escapeHtml(u.username)}</span></span>${actions}</div>`;
 }
-$('savedBtn').onclick = () => {
-  $('savedList').innerHTML = savedList.length ? savedList.map((e) => {
-    const s = e.snapshot;
-    const when = new Date(s.at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-    return `<div class="sv-item"><div class="sv-head"><b>${escapeHtml(s.from === me.username ? 'Bạn' : peerName(s.from))}</b><span class="muted">${when}</span><button class="sv-unsave" data-id="${e.msgId}">Bỏ lưu</button></div><div class="sv-body">${savedContentHtml(s)}</div></div>`;
-  }).join('') : '<p class="muted">Chưa có tin nhắn nào được lưu. Nhấn giữ một tin nhắn và chọn "Lưu tin nhắn".</p>';
-  $('savedView').hidden = false;
-};
-$('savedClose').onclick = () => { $('savedView').hidden = true; };
-$('savedList').addEventListener('click', async (e) => {
-  const b = e.target.closest('.sv-unsave'); if (!b) return;
-  const id = Number(b.dataset.id);
-  const r = await fetch('/api/saved/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
-  if (r.ok) { savedIds.delete(id); savedList = savedList.filter((x) => x.msgId !== id); $('savedBtn').click(); }
+function renderFriends() {
+  const rel = {}; users.forEach((u) => { rel[u.username] = u.relation; });
+  let h = '';
+  h += '<div class="fr-label">📩 Lời mời đến</div>';
+  h += friendsData.incoming.length ? friendsData.incoming.map(({ user: u }) => frRow(u,
+    `<button class="fr-act go" data-act="accept" data-u="${u.username}">Đồng ý</button><button class="fr-act" data-act="decline" data-u="${u.username}">Từ chối</button>`)).join('')
+    : '<p class="muted">Chưa có lời mời nào.</p>';
+  h += '<div class="fr-label">👥 Bạn bè của bạn</div>';
+  h += friendsData.friends.length ? friendsData.friends.map((u) => frRow(u,
+    `<button class="fr-act go" data-act="chat" data-u="${u.username}">Nhắn tin</button><button class="fr-act" data-act="unfriend" data-u="${u.username}">Huỷ kết bạn</button>`)).join('')
+    : '<p class="muted">Chưa có bạn bè nào.</p>';
+  h += '<div class="fr-label">➕ Thêm bạn mới</div>';
+  const addable = users.filter((u) => rel[u.username] === 'none' || rel[u.username] === 'pending_out');
+  h += addable.length ? addable.map((u) => frRow(u,
+    rel[u.username] === 'pending_out' ? '<span class="muted">Đã gửi lời mời…</span>' : `<button class="fr-act go" data-act="add" data-u="${u.username}">Kết bạn</button>`)).join('')
+    : '<p class="muted">Mọi người trong app đều đã là bạn hoặc đang chờ duyệt.</p>';
+  if (friendsData.outgoing.length) {
+    h += '<div class="fr-label">📤 Đã gửi, đang chờ</div>' + friendsData.outgoing.map(({ user: u }) => frRow(u, '<span class="muted">Chờ đồng ý…</span>')).join('');
+  }
+  $('friendsBody').innerHTML = h;
+}
+$('friendsBtn').onclick = () => { renderFriends(); $('friendsView').hidden = false; };
+$('friendsClose').onclick = () => { $('friendsView').hidden = true; };
+$('friendsBody').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const u = b.dataset.u, act = b.dataset.act;
+  const H = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  try {
+    if (act === 'chat') { $('friendsView').hidden = true; openChat(u); return; }
+    if (act === 'add') {
+      const r = await fetch('/api/friends/request', { method: 'POST', headers: H, body: JSON.stringify({ to: u }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Không gửi được lời mời');
+      toast('Đã gửi lời mời kết bạn', 'Tới ' + peerName(u));
+    } else if (act === 'accept' || act === 'decline') {
+      const r = await fetch('/api/friends/respond', { method: 'POST', headers: H, body: JSON.stringify({ from: u, accept: act === 'accept' }) });
+      if (!r.ok) throw new Error('Không xử lý được lời mời');
+      if (act === 'accept') toast('🤝 Đã thành bạn bè', 'Với ' + peerName(u));
+    } else if (act === 'unfriend') {
+      if (!confirm('Huỷ kết bạn với ' + peerName(u) + '? Hai bạn sẽ không nhắn tin 1-1 được nữa (nhóm chung vẫn còn).')) return;
+      const r = await fetch('/api/friends/' + encodeURIComponent(u), { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+      if (!r.ok) throw new Error('Không huỷ kết bạn được');
+    }
+    await loadFriends(); await refreshUsers(); renderFriends();
+  } catch (err) { toast('Lỗi', err.message); }
 });
 
 /* Ho so: bam avatar/ten cua minh, cua ban be, hoac tieu de nhom */
@@ -627,8 +715,6 @@ function openMsgMenu(m) {
   $('mmReacts').style.display = dead ? 'none' : '';
   $('mmReply').hidden = dead || m.type === 'call';
   $('mmForward').hidden = dead || m.type === 'call';
-  $('mmSave').hidden = dead || m.type === 'call';
-  $('mmSave').textContent = savedIds.has(m.id) ? '🔖 Bỏ lưu tin nhắn' : '🔖 Lưu tin nhắn';
   $('msgMenu').hidden = false;
 }
 function closeMsgMenu() { $('msgMenu').hidden = true; menuMsg = null; }
@@ -702,23 +788,6 @@ $('mmForward').onclick = () => {
   if (!menuMsg) return;
   forwardTarget = menuMsg; closeMsgMenu();
   openForwardPicker();
-};
-$('mmSave').onclick = async () => {
-  if (!menuMsg) return;
-  const target = menuMsg; closeMsgMenu();
-  if (savedIds.has(target.id)) {
-    const r = await fetch('/api/saved/' + target.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
-    if (r.ok) { savedIds.delete(target.id); savedList = savedList.filter((e) => e.msgId !== target.id); toast('Đã bỏ lưu', 'Tin nhắn đã gỡ khỏi mục Đã lưu'); }
-    else toast('Không bỏ lưu được', 'Thử lại sau');
-  } else {
-    try {
-      const r = await fetch('/api/saved', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ msgId: target.id }) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || 'Lưu thất bại');
-      savedIds.add(target.id); if (d.entry) savedList.unshift(d.entry);
-      toast('Đã lưu tin nhắn', 'Xem lại trong mục 🔖 Tin đã lưu');
-    } catch (err) { toast('Không lưu được', err.message); }
-  }
 };
 $('mmDelete').onclick = () => {
   if (!menuMsg) return;
@@ -802,11 +871,34 @@ function newPC() {
   return pc;
 }
 async function getMedia() {
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callType === 'video' });
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const e = new Error('unsupported'); e.name = 'UnsupportedError'; throw e;
+  }
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callType === 'video' ? { facingMode: 'user' } : false });
   $('localVideo').srcObject = callType === 'video' ? localStream : null;
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 }
-function showCall(title, status) { $('callView').hidden = false; $('callTitle').textContent = title; $('callStatus').textContent = status; }
+/* Giai thich loi mic/camera theo tung nguyen nhan + cach tu sua */
+function callErrorHelp(e) {
+  const n = (e && e.name) || '';
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'Trình duyệt đang CHẶN quyền mic/camera nên cuộc gọi không thực hiện được.\n\nCách bật lại: bấm vào biểu tượng 🔒 (hoặc ⓘ) ở đầu thanh địa chỉ → mục Quyền / Cài đặt trang web → đặt Micro' + (callType === 'video' ? ' và Camera' : '') + ' thành “Cho phép” → tải lại trang rồi gọi lại.\n\nNếu bạn đang mở link bên trong Zalo/Facebook, hãy chọn “Mở bằng trình duyệt” (Chrome/Safari) rồi thử lại — trình duyệt trong app thường không cấp được quyền mic/camera.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Không tìm thấy ' + (callType === 'video' ? 'mic/camera' : 'micro') + ' trên thiết bị này. Hãy cắm tai nghe có mic hoặc thử bằng thiết bị khác.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'Mic/camera đang bị một ứng dụng khác sử dụng. Hãy đóng ứng dụng đó rồi gọi lại.';
+  if (n === 'UnsupportedError') return 'Trình duyệt này không hỗ trợ gọi thoại/video (hoặc trang chưa chạy https). Hãy mở link bằng Chrome hoặc Safari bản mới nhất rồi thử lại.';
+  return 'Không mở được mic/camera (' + (n || 'lỗi không rõ') + '). Hãy kiểm tra lại quyền mic/camera của trình duyệt rồi thử lại.';
+}
+function showCallError(e) {
+  stopRing(); clearInterval(callTimer);
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+  $('incomingView').hidden = true;
+  showCall('Không gọi được', '');
+  $('callErrorText').textContent = callErrorHelp(e);
+  $('callError').hidden = false;
+  callPeer = null; pendingOffer = null;
+}
+$('callErrorClose').onclick = () => { $('callError').hidden = true; $('callView').hidden = true; };
+function showCall(title, status) { $('callError').hidden = true; $('callView').hidden = false; $('callTitle').textContent = title; $('callStatus').textContent = status; }
 function startTimer() {
   callStartAt = Date.now();
   callTimer = setInterval(() => { const s = Math.floor((Date.now() - callStartAt) / 1000);
@@ -817,14 +909,14 @@ function cleanupCall(sendHistory, label) {
   clearInterval(callTimer);
   if (pc) { pc.close(); pc = null; }
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
-  $('callView').hidden = true; $('incomingView').hidden = true;
+  $('callView').hidden = true; $('incomingView').hidden = true; $('callError').hidden = true;
   if (sendHistory && callPeer) sendDM(callPeer, 'call', label || 'Cuộc gọi');
   callPeer = null; pendingOffer = null;
 }
 async function startCall(type) {
   if (!currentPeer) return;
   callType = type; callPeer = currentPeer; newPC();
-  try { await getMedia(); } catch { toast('Không mở được mic/camera', 'Hãy cấp quyền cho trình duyệt'); cleanupCall(false); return; }
+  try { await getMedia(); } catch (err) { showCallError(err); return; }
   showCall(peerName(callPeer), 'Đang gọi…');
   const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
   socket.emit('call:offer', { to: callPeer, offer, callType });
@@ -847,7 +939,7 @@ function wireCallSocket() {
 $('acceptBtn').onclick = async () => {
   stopRing();
   $('incomingView').hidden = true; newPC();
-  try { await getMedia(); } catch { toast('Không mở được mic/camera', ''); socket.emit('call:reject', { to: callPeer }); cleanupCall(false); return; }
+  try { await getMedia(); } catch (err) { socket.emit('call:reject', { to: callPeer }); showCallError(err); return; }
   await pc.setRemoteDescription(pendingOffer);
   const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
   socket.emit('call:answer', { to: callPeer, answer });
