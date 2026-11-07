@@ -188,18 +188,21 @@ function previewText(m) {
   return 'Tin nhắn mới';
 }
 function isOnline(username) { const s = socketsByUser.get(username); return !!(s && s.size); }
-async function sendPush(username, payload) {
-  if (!webpush || !vapidKeys || isOnline(username)) return; /* online thi da nhan qua socket */
+async function sendPush(username, payload, force = false) {
+  if (!webpush || !vapidKeys) return 0;
+  if (!force && isOnline(username)) return 0; /* online thi da nhan qua socket */
   const subs = pushSubs.get(username);
-  if (!subs || !subs.size) return;
+  if (!subs || !subs.size) return 0;
   const body = JSON.stringify(payload);
+  let delivered = 0;
   for (const [endpoint, sub] of [...subs.entries()]) {
-    try { await webpush.sendNotification(sub, body); }
+    try { await webpush.sendNotification(sub, body); delivered++; }
     catch (e) {
       if (e && (e.statusCode === 404 || e.statusCode === 410)) { subs.delete(endpoint); removePushSub(endpoint); }
       else console.error('Push loi:', e && e.statusCode, e && e.message);
     }
   }
+  return delivered;
 }
 function notifyOfflineForMessage(msg) {
   if (!webpush || msg.type === 'call' || msg.type === 'recalled') return;
@@ -482,6 +485,21 @@ app.delete('/api/push/subscribe', authRest, (req, res) => {
   if (m && endpoint) m.delete(endpoint);
   if (endpoint) removePushSub(endpoint);
   res.json({ ok: true });
+});
+
+/* Trang thai dang ky push cua chinh nguoi dung (de hien nut Bat thong bao + chan doan) */
+app.get('/api/push/status', authRest, (req, res) => {
+  const m = pushSubs.get(req.username);
+  res.json({ subscriptions: m ? m.size : 0, pushReady: !!vapidKeys });
+});
+
+/* Gui 1 thong bao THU cho chinh minh (ke ca dang online) de kiem tra duong push */
+app.post('/api/push/test', authRest, async (req, res) => {
+  const m = pushSubs.get(req.username);
+  const count = m ? m.size : 0;
+  if (!count) return res.status(404).json({ error: 'Thiết bị này chưa đăng ký nhận thông báo', subscriptions: 0 });
+  const delivered = await sendPush(req.username, { title: '🔔 Thông báo thử', body: 'Nếu bạn thấy thông báo này thì tính năng báo tin nhắn khi tắt app đã hoạt động!', conv: null, tag: 'test' }, true);
+  res.json({ ok: true, subscriptions: count, delivered });
 });
 
 /* So tin chua doc + tin gan nhat cua tung cuoc tro chuyen (de khoi phuc huy hieu khi mo lai app) */
