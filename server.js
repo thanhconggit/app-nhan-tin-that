@@ -30,6 +30,11 @@ const USER_FILE = path.join(DATA_DIR, 'users.json');
 const GROUP_FILE = path.join(DATA_DIR, 'groups.json');
 const AVATAR_FILE = path.join(DATA_DIR, 'avatars.json');
 const FRIEND_FILE = path.join(DATA_DIR, 'friends.json');
+const READ_FILE = path.join(DATA_DIR, 'reads.json');
+const PUSH_FILE = path.join(DATA_DIR, 'push.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+let webpush = null;
+try { webpush = require('web-push'); } catch { console.error('Thieu package web-push — thong bao day (push) tam tat'); }
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Danh sach tai khoan da dang ky can XOA khoi noi luu tru khi khoi dong,
@@ -47,6 +52,9 @@ const pairKey = (x, y) => (x < y ? [x, y] : [y, x]);
 function findFriendship(x, y) { const [a, b] = pairKey(x, y); return friendships.find((f) => f.a === a && f.b === b); }
 function areFriends(x, y) { const f = findFriendship(x, y); return !!(f && f.status === 'accepted'); }
 function friendsOf(username) { return friendships.filter((f) => f.status === 'accepted' && (f.a === username || f.b === username)).map((f) => (f.a === username ? f.b : f.a)); }
+let readMarks = new Map();     // username -> Map(convKey 'u:<peer>'|'g:<gid>' -> id tin da doc gan nhat)
+let pushSubs = new Map();      // username -> Map(endpoint -> {endpoint, keys})
+let vapidKeys = null;          // {publicKey, privateKey} — sinh 1 lan, luu ben trong DB/file config
 const publicGroup = (g) => ({ id: g.id, name: g.name, members: g.members, createdBy: g.createdBy, at: g.at });
 function safeParseReactions(s) { try { const o = JSON.parse(s || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
 function safeParseExtra(s) {
@@ -136,6 +144,74 @@ function deleteFriendshipRow(f) {
   }
   persistFriendsFile();
 }
+
+/* ===== Da doc / chua doc + Web Push (thong bao khi offline) ===== */
+function persistReadsFile() {
+  try { fs.writeFileSync(READ_FILE, JSON.stringify([...readMarks.entries()].map(([u, m]) => [u, [...m.entries()]]))); } catch (e) { console.error('Luu reads loi:', e.message); }
+}
+function saveReadMark(username, conv, lastId) {
+  if (pool) {
+    pool.query('INSERT INTO reads(username, conv, last_read) VALUES($1,$2,$3) ON CONFLICT (username, conv) DO UPDATE SET last_read=EXCLUDED.last_read',
+      [username, conv, lastId]).catch((e) => console.error('Luu read (DB) loi:', e.message));
+    return;
+  }
+  persistReadsFile();
+}
+function persistPushFile() {
+  try { fs.writeFileSync(PUSH_FILE, JSON.stringify([...pushSubs.entries()].map(([u, m]) => [u, [...m.values()]]))); } catch (e) { console.error('Luu push loi:', e.message); }
+}
+function savePushSub(username, sub) {
+  if (pool) {
+    pool.query('INSERT INTO push_subs(username, endpoint, sub) VALUES($1,$2,$3) ON CONFLICT (endpoint) DO UPDATE SET username=EXCLUDED.username, sub=EXCLUDED.sub',
+      [username, sub.endpoint, JSON.stringify(sub)]).catch((e) => console.error('Luu push sub (DB) loi:', e.message));
+    return;
+  }
+  persistPushFile();
+}
+function removePushSub(endpoint) {
+  if (pool) {
+    pool.query('DELETE FROM push_subs WHERE endpoint=$1', [endpoint]).catch((e) => console.error('Xoa push sub (DB) loi:', e.message));
+    return;
+  }
+  persistPushFile();
+}
+function persistConfigFile(cfg) {
+  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg)); } catch (e) { console.error('Luu config loi:', e.message); }
+}
+function previewText(m) {
+  if (m.type === 'text') return String(m.content).slice(0, 90);
+  if (m.type === 'emoji') return String(m.content);
+  if (m.type === 'sticker') return '🎨 Sticker';
+  if (m.type === 'image') return '🖼️ Ảnh';
+  if (m.type === 'audio') return '🎤 Tin nhắn thoại';
+  if (m.type === 'gif') return '🎬 GIF';
+  return 'Tin nhắn mới';
+}
+function isOnline(username) { const s = socketsByUser.get(username); return !!(s && s.size); }
+async function sendPush(username, payload) {
+  if (!webpush || !vapidKeys || isOnline(username)) return; /* online thi da nhan qua socket */
+  const subs = pushSubs.get(username);
+  if (!subs || !subs.size) return;
+  const body = JSON.stringify(payload);
+  for (const [endpoint, sub] of [...subs.entries()]) {
+    try { await webpush.sendNotification(sub, body); }
+    catch (e) {
+      if (e && (e.statusCode === 404 || e.statusCode === 410)) { subs.delete(endpoint); removePushSub(endpoint); }
+      else console.error('Push loi:', e && e.statusCode, e && e.message);
+    }
+  }
+}
+function notifyOfflineForMessage(msg) {
+  if (!webpush || msg.type === 'call' || msg.type === 'recalled') return;
+  const senderName = (userByName.get(msg.from) || {}).displayName || msg.from;
+  if (msg.groupId) {
+    const g = groups.find((x) => x.id === msg.groupId); if (!g) return;
+    const payload = { title: g.name, body: senderName + ': ' + previewText(msg), conv: 'g:' + g.id, tag: 'g:' + g.id };
+    for (const m of g.members) if (m !== msg.from) sendPush(m, payload);
+  } else if (msg.to) {
+    sendPush(msg.to, { title: senderName, body: previewText(msg), conv: 'u:' + msg.from, tag: 'u:' + msg.from });
+  }
+}
 function saveAvatar(username, dataUrl) {
   if (pool) {
     if (dataUrl) pool.query('INSERT INTO avatars(username, avatar) VALUES($1,$2) ON CONFLICT (username) DO UPDATE SET avatar=EXCLUDED.avatar', [username, dataUrl]).catch((e) => console.error('Luu avatar (DB) loi:', e.message));
@@ -165,6 +241,9 @@ async function initStorage() {
     await pool.query('CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created_by TEXT NOT NULL, at BIGINT NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS avatars(username TEXT PRIMARY KEY, avatar TEXT NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS friendships(a TEXT NOT NULL, b TEXT NOT NULL, status TEXT NOT NULL, requested_by TEXT NOT NULL, at BIGINT NOT NULL, PRIMARY KEY(a, b))');
+    await pool.query('CREATE TABLE IF NOT EXISTS reads(username TEXT NOT NULL, conv TEXT NOT NULL, last_read BIGINT NOT NULL, PRIMARY KEY(username, conv))');
+    await pool.query('CREATE TABLE IF NOT EXISTS push_subs(username TEXT NOT NULL, endpoint TEXT NOT NULL, sub TEXT NOT NULL, PRIMARY KEY(endpoint))');
+    await pool.query('CREATE TABLE IF NOT EXISTS app_config(k TEXT PRIMARY KEY, v TEXT NOT NULL)');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
     if (REMOVE_USERS.length) {
@@ -186,12 +265,23 @@ async function initStorage() {
     avatars = new Map(rav.rows.map((r) => [r.username, r.avatar]));
     const rfr = await pool.query('SELECT a, b, status, requested_by, at FROM friendships ORDER BY at ASC');
     friendships = rfr.rows.map((r) => ({ a: r.a, b: r.b, status: r.status, requestedBy: r.requested_by, at: Number(r.at) }));
+    const rrd = await pool.query('SELECT username, conv, last_read FROM reads');
+    readMarks = new Map();
+    for (const r of rrd.rows) { if (!readMarks.has(r.username)) readMarks.set(r.username, new Map()); readMarks.get(r.username).set(r.conv, Number(r.last_read)); }
+    const rps = await pool.query('SELECT username, endpoint, sub FROM push_subs');
+    pushSubs = new Map();
+    for (const r of rps.rows) { let sub = null; try { sub = JSON.parse(r.sub); } catch { /* bo qua */ } if (sub) { if (!pushSubs.has(r.username)) pushSubs.set(r.username, new Map()); pushSubs.get(r.username).set(r.endpoint, sub); } }
+    const rcfg = await pool.query("SELECT v FROM app_config WHERE k='vapid'");
+    if (rcfg.rows.length) { try { vapidKeys = JSON.parse(rcfg.rows[0].v); } catch { vapidKeys = null; } }
     console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky, ${messages.length} tin nhan va ${groups.length} nhom tu Postgres`);
   } else {
     try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
     try { if (fs.existsSync(GROUP_FILE)) groups = JSON.parse(fs.readFileSync(GROUP_FILE, 'utf8')); if (!Array.isArray(groups)) groups = []; } catch { groups = []; }
     try { if (fs.existsSync(AVATAR_FILE)) avatars = new Map(JSON.parse(fs.readFileSync(AVATAR_FILE, 'utf8'))); } catch { avatars = new Map(); }
     try { if (fs.existsSync(FRIEND_FILE)) friendships = JSON.parse(fs.readFileSync(FRIEND_FILE, 'utf8')); if (!Array.isArray(friendships)) friendships = []; } catch { friendships = []; }
+    try { if (fs.existsSync(READ_FILE)) readMarks = new Map(JSON.parse(fs.readFileSync(READ_FILE, 'utf8')).map(([u, arr]) => [u, new Map(arr)])); } catch { readMarks = new Map(); }
+    try { if (fs.existsSync(PUSH_FILE)) pushSubs = new Map(JSON.parse(fs.readFileSync(PUSH_FILE, 'utf8')).map(([u, arr]) => [u, new Map(arr.map((s) => [s.endpoint, s]))])); } catch { pushSubs = new Map(); }
+    try { if (fs.existsSync(CONFIG_FILE)) { const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); if (cfg && cfg.vapid) vapidKeys = cfg.vapid; } } catch { /* bo qua */ }
     try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
     if (REMOVE_USERS.length) {
       const before = registeredUsers.length;
@@ -213,6 +303,26 @@ async function initStorage() {
       friendships.push(f); saveFriendship(f);
     }
     if (names.length > 1) console.log(`[KET BAN] Tu dong ket ban ${friendships.length} cap tai khoan hien co`);
+  }
+  /* VAPID cho Web Push: sinh 1 lan duy nhat, luu vao DB/file de khong doi sau moi lan deploy */
+  if (webpush && !vapidKeys) {
+    vapidKeys = webpush.generateVAPIDKeys();
+    if (pool) { try { await pool.query("INSERT INTO app_config(k, v) VALUES('vapid', $1) ON CONFLICT (k) DO NOTHING", [JSON.stringify(vapidKeys)]); } catch (e) { console.error('Luu VAPID loi:', e.message); } }
+    else persistConfigFile({ vapid: vapidKeys });
+    console.log('[PUSH] Da sinh cap khoa VAPID moi');
+  }
+  if (webpush && vapidKeys) { try { webpush.setVapidDetails('https://app-nhan-tin-that.onrender.com', vapidKeys.publicKey, vapidKeys.privateKey); } catch (e) { console.error('VAPID loi:', e.message); } }
+  /* Lan dau co tinh nang chua doc: danh dau toan bo lich su cu la DA DOC cho moi nguoi,
+     chi tin moi tu luc nay moi tinh la chua doc (tranh no huy hieu khi vua nang cap) */
+  if (readMarks.size === 0 && messages.length) {
+    const latest = new Map(); // username -> Map(conv -> maxId)
+    const bump = (u, conv, id) => { if (!latest.has(u)) latest.set(u, new Map()); const mm = latest.get(u); if (id > (mm.get(conv) || 0)) mm.set(conv, id); };
+    for (const m of messages) {
+      if (m.groupId) { const g = groups.find((x) => x.id === m.groupId); if (g) for (const mem of g.members) bump(mem, 'g:' + m.groupId, m.id); }
+      else { bump(m.from, 'u:' + m.to, m.id); bump(m.to, 'u:' + m.from, m.id); }
+    }
+    for (const [u, mm] of latest) { readMarks.set(u, mm); for (const [conv, id] of mm) saveReadMark(u, conv, id); }
+    console.log(`[READ] Da khoi tao moc da doc cho ${latest.size} tai khoan`);
   }
   for (const m of messages) if (!m.reactions || typeof m.reactions !== 'object') m.reactions = {};
   seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
@@ -347,6 +457,62 @@ app.delete('/api/friends/:username', authRest, (req, res) => {
   if (!f || f.status !== 'accepted') return res.status(404).json({ error: 'Không phải bạn bè' });
   friendships = friendships.filter((x) => x !== f); deleteFriendshipRow(f);
   emitToUser(other, 'friends:changed', {});
+  res.json({ ok: true });
+});
+
+/* ===== Thong bao day (Web Push) + tin chua doc ===== */
+app.get('/api/push/key', authRest, (req, res) => res.json({ publicKey: vapidKeys ? vapidKeys.publicKey : null }));
+
+app.post('/api/push/subscribe', authRest, (req, res) => {
+  const sub = (req.body || {}).subscription || req.body || {};
+  if (typeof sub.endpoint !== 'string' || !sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') {
+    return res.status(400).json({ error: 'Subscription không hợp lệ' });
+  }
+  const clean = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
+  for (const [u, m] of pushSubs) if (u !== req.username && m.has(clean.endpoint)) m.delete(clean.endpoint);
+  if (!pushSubs.has(req.username)) pushSubs.set(req.username, new Map());
+  pushSubs.get(req.username).set(clean.endpoint, clean);
+  savePushSub(req.username, clean);
+  res.json({ ok: true });
+});
+
+app.delete('/api/push/subscribe', authRest, (req, res) => {
+  const endpoint = String((req.body || {}).endpoint || '');
+  const m = pushSubs.get(req.username);
+  if (m && endpoint) m.delete(endpoint);
+  if (endpoint) removePushSub(endpoint);
+  res.json({ ok: true });
+});
+
+/* So tin chua doc + tin gan nhat cua tung cuoc tro chuyen (de khoi phuc huy hieu khi mo lai app) */
+app.get('/api/unread', authRest, (req, res) => {
+  const me = req.username;
+  const marks = readMarks.get(me) || new Map();
+  const unread = {}, last = {};
+  for (const m of messages) {
+    let key = null;
+    if (m.groupId) { const g = groups.find((x) => x.id === m.groupId); if (g && g.members.includes(me)) key = 'g:' + m.groupId; }
+    else if (m.from === me) key = 'u:' + m.to;
+    else if (m.to === me) key = 'u:' + m.from;
+    if (!key) continue;
+    last[key] = m;
+    if (m.from !== me && m.id > (marks.get(key) || 0)) unread[key] = (unread[key] || 0) + 1;
+  }
+  res.json({ unread, last });
+});
+
+/* Danh dau da doc toi mot tin */
+app.post('/api/read', authRest, (req, res) => {
+  const conv = String((req.body || {}).conv || '');
+  const lastId = Number((req.body || {}).lastId) || 0;
+  if (!/^[ug]:/.test(conv)) return res.status(400).json({ error: 'Cuộc trò chuyện không hợp lệ' });
+  if (conv[0] === 'g') {
+    const g = groups.find((x) => x.id === conv.slice(2));
+    if (!g || !g.members.includes(req.username)) return res.status(403).json({ error: 'Không thuộc nhóm' });
+  } else if (!userByName.has(conv.slice(2))) return res.status(400).json({ error: 'Người dùng không hợp lệ' });
+  if (!readMarks.has(req.username)) readMarks.set(req.username, new Map());
+  const marks = readMarks.get(req.username);
+  if (lastId > (marks.get(conv) || 0)) { marks.set(conv, lastId); saveReadMark(req.username, conv, lastId); }
   res.json({ ok: true });
 });
 
@@ -488,6 +654,7 @@ io.on('connection', (socket) => {
       if (messages.length > 5000) messages = messages.slice(-5000);
       persist(msg);
       for (const m of g.members) if (m !== me) emitToUser(m, 'message:new', msg);
+      notifyOfflineForMessage(msg);
       return ack?.({ ok: true, message: msg });
     }
     if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
@@ -497,6 +664,7 @@ io.on('connection', (socket) => {
     if (messages.length > 5000) messages = messages.slice(-5000);
     persist(msg);
     emitToUser(to, 'message:new', msg);
+    notifyOfflineForMessage(msg);
     ack?.({ ok: true, message: msg });
   });
 
