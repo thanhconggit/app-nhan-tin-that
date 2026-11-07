@@ -34,9 +34,10 @@ cuộc gọi dùng **WebRTC thật** (âm thanh/hình ảnh đi ngang hàng gi�
 - **Trả lời, chia sẻ tin** (trong menu nhấn giữ tin nhắn): **Trả lời** kèm trích dẫn (bấm vào trích dẫn
   để nhảy tới tin gốc), **Chia sẻ** chuyển tiếp tin tới bạn bè/nhóm khác (có nhãn "Đã chia sẻ", server tự sao
   chép nội dung).
-- **Kết bạn & lời mời kết bạn:** phải là bạn bè mới nhắn tin 1-1 và gọi được cho nhau; gửi/đồng ý/từ chối
-  lời mời và huỷ kết bạn ở mục "🤝 Bạn bè & lời mời" (tài khoản có từ trước khi nâng cấp được tự kết bạn
-  với nhau để không ai mất liên lạc). Nút tạo nhóm thu gọn thành nút tròn ＋ cạnh ô tìm kiếm.
+- **Kết bạn & lời mời kết bạn:** chưa kết bạn vẫn nhắn tin 1-1 được, nhưng chỉ bạn bè mới **gọi** được
+  cho nhau. Thêm bạn bằng cách gõ đúng **@tên tài khoản** trong mục "🤝 Bạn bè & lời mời" (hoặc bấm nút
+  icon người-+ cạnh ô tìm kiếm); đồng ý/từ chối lời mời và huỷ kết bạn cũng ở đó (tài khoản có từ trước
+  khi nâng cấp được tự kết bạn với nhau). Nút tạo nhóm là nút tròn icon nhóm-người-+ cạnh nút thêm bạn.
 - **Tìm kiếm tin nhắn** trong từng cuộc trò chuyện (nút 🔍, bôi sáng kết quả, nhảy qua lại bằng ↑ ↓) và
   **bật/tắt thông báo** toàn cục bằng nút 🔔/🔕 (tắt cả chuông lẫn thông báo hệ thống).
 - **Thao tác trên tin nhắn** (nhấn giữ trên điện thoại / chuột phải trên máy tính vào bong bóng tin):
