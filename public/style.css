@@ -154,6 +154,7 @@ button{touch-action:manipulation}
 .fr-act{padding:6px 12px;font-size:13.5px;min-height:36px}
 .fr-act.go{background:#0068ff;color:#fff;border-color:#0068ff}
 #friendsBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#eaf1ff;border-color:#c9d6ee;font-weight:600;color:#0050c8}
+#pushBtn{margin:0 10px 10px;width:calc(100% - 20px);background:#fff6e0;border-color:#f0d48a;font-weight:600;color:#8a6100}
 #friendBadge{position:static;margin-left:2px}
 /* ===== Sticker anh that (them 06/11/2026) ===== */
 .msg.nobg{background:transparent;box-shadow:none;padding:2px}
