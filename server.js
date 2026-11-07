@@ -29,7 +29,7 @@ const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const USER_FILE = path.join(DATA_DIR, 'users.json');
 const GROUP_FILE = path.join(DATA_DIR, 'groups.json');
 const AVATAR_FILE = path.join(DATA_DIR, 'avatars.json');
-const SAVED_FILE = path.join(DATA_DIR, 'saved.json');
+const FRIEND_FILE = path.join(DATA_DIR, 'friends.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // Danh sach tai khoan da dang ky can XOA khoi noi luu tru khi khoi dong,
@@ -42,7 +42,11 @@ let registeredUsers = [];
 let groups = [];
 let groupSeq = 0;
 let avatars = new Map();       // username -> data URL anh dai dien
-let savedByUser = new Map();   // username -> [{msgId, snapshot, at}] (moi nhat dung dau mang khi tra ve API)
+let friendships = [];          // [{a, b, status: 'pending'|'accepted', requestedBy, at}] - a < b theo thu tu chu cai, 1 dong/cap
+const pairKey = (x, y) => (x < y ? [x, y] : [y, x]);
+function findFriendship(x, y) { const [a, b] = pairKey(x, y); return friendships.find((f) => f.a === a && f.b === b); }
+function areFriends(x, y) { const f = findFriendship(x, y); return !!(f && f.status === 'accepted'); }
+function friendsOf(username) { return friendships.filter((f) => f.status === 'accepted' && (f.a === username || f.b === username)).map((f) => (f.a === username ? f.b : f.a)); }
 const publicGroup = (g) => ({ id: g.id, name: g.name, members: g.members, createdBy: g.createdBy, at: g.at });
 function safeParseReactions(s) { try { const o = JSON.parse(s || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } }
 function safeParseExtra(s) {
@@ -114,8 +118,23 @@ function saveGroup(g) {
 function persistAvatarsFile() {
   try { fs.writeFileSync(AVATAR_FILE, JSON.stringify([...avatars.entries()])); } catch (e) { console.error('Luu avatar loi:', e.message); }
 }
-function persistSavedFile() {
-  try { fs.writeFileSync(SAVED_FILE, JSON.stringify([...savedByUser.entries()])); } catch (e) { console.error('Luu tin da luu loi:', e.message); }
+function persistFriendsFile() {
+  try { fs.writeFileSync(FRIEND_FILE, JSON.stringify(friendships)); } catch (e) { console.error('Luu ket ban loi:', e.message); }
+}
+function saveFriendship(f) {
+  if (pool) {
+    pool.query('INSERT INTO friendships(a, b, status, requested_by, at) VALUES($1,$2,$3,$4,$5) ON CONFLICT (a, b) DO UPDATE SET status=EXCLUDED.status, requested_by=EXCLUDED.requested_by, at=EXCLUDED.at',
+      [f.a, f.b, f.status, f.requestedBy, f.at]).catch((e) => console.error('Luu ket ban (DB) loi:', e.message));
+    return;
+  }
+  persistFriendsFile();
+}
+function deleteFriendshipRow(f) {
+  if (pool) {
+    pool.query('DELETE FROM friendships WHERE a=$1 AND b=$2', [f.a, f.b]).catch((e) => console.error('Xoa ket ban (DB) loi:', e.message));
+    return;
+  }
+  persistFriendsFile();
 }
 function saveAvatar(username, dataUrl) {
   if (pool) {
@@ -125,22 +144,6 @@ function saveAvatar(username, dataUrl) {
   }
   persistAvatarsFile();
 }
-function storeSaved(username, entry) {
-  if (pool) {
-    pool.query('INSERT INTO saved_messages(username, msg_id, snapshot, at) VALUES($1,$2,$3,$4) ON CONFLICT (username, msg_id) DO NOTHING',
-      [username, entry.msgId, JSON.stringify(entry.snapshot), entry.at]).catch((e) => console.error('Luu tin (DB) loi:', e.message));
-    return;
-  }
-  persistSavedFile();
-}
-function removeSaved(username, msgId) {
-  if (pool) {
-    pool.query('DELETE FROM saved_messages WHERE username=$1 AND msg_id=$2', [username, msgId]).catch((e) => console.error('Xoa tin da luu (DB) loi:', e.message));
-    return;
-  }
-  persistSavedFile();
-}
-
 function saveUser(u) {
   if (pool) {
     pool.query(
@@ -161,7 +164,7 @@ async function initStorage() {
     await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS extra TEXT');
     await pool.query('CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, created_by TEXT NOT NULL, at BIGINT NOT NULL)');
     await pool.query('CREATE TABLE IF NOT EXISTS avatars(username TEXT PRIMARY KEY, avatar TEXT NOT NULL)');
-    await pool.query('CREATE TABLE IF NOT EXISTS saved_messages(username TEXT NOT NULL, msg_id BIGINT NOT NULL, snapshot TEXT NOT NULL, at BIGINT NOT NULL, PRIMARY KEY(username, msg_id))');
+    await pool.query('CREATE TABLE IF NOT EXISTS friendships(a TEXT NOT NULL, b TEXT NOT NULL, status TEXT NOT NULL, requested_by TEXT NOT NULL, at BIGINT NOT NULL, PRIMARY KEY(a, b))');
     const ru = await pool.query('SELECT username, display_name, password_hash FROM users');
     registeredUsers = ru.rows.map((r) => ({ username: r.username, displayName: r.display_name, passwordHash: r.password_hash }));
     if (REMOVE_USERS.length) {
@@ -181,19 +184,14 @@ async function initStorage() {
     groups = rg.rows.map((r) => ({ id: r.id, name: r.name, members: JSON.parse(r.members), createdBy: r.created_by, at: Number(r.at) }));
     const rav = await pool.query('SELECT username, avatar FROM avatars');
     avatars = new Map(rav.rows.map((r) => [r.username, r.avatar]));
-    const rsv = await pool.query('SELECT username, msg_id, snapshot, at FROM saved_messages ORDER BY at ASC');
-    savedByUser = new Map();
-    for (const r of rsv.rows) {
-      if (!savedByUser.has(r.username)) savedByUser.set(r.username, []);
-      let snap = {}; try { snap = JSON.parse(r.snapshot); } catch { /* bo qua */ }
-      savedByUser.get(r.username).push({ msgId: Number(r.msg_id), snapshot: snap, at: Number(r.at) });
-    }
+    const rfr = await pool.query('SELECT a, b, status, requested_by, at FROM friendships ORDER BY at ASC');
+    friendships = rfr.rows.map((r) => ({ a: r.a, b: r.b, status: r.status, requestedBy: r.requested_by, at: Number(r.at) }));
     console.log(`[DB] Da nap ${registeredUsers.length} tai khoan dang ky, ${messages.length} tin nhan va ${groups.length} nhom tu Postgres`);
   } else {
     try { if (fs.existsSync(MSG_FILE)) messages = JSON.parse(fs.readFileSync(MSG_FILE, 'utf8')); if (!Array.isArray(messages)) messages = []; } catch { messages = []; }
     try { if (fs.existsSync(GROUP_FILE)) groups = JSON.parse(fs.readFileSync(GROUP_FILE, 'utf8')); if (!Array.isArray(groups)) groups = []; } catch { groups = []; }
     try { if (fs.existsSync(AVATAR_FILE)) avatars = new Map(JSON.parse(fs.readFileSync(AVATAR_FILE, 'utf8'))); } catch { avatars = new Map(); }
-    try { if (fs.existsSync(SAVED_FILE)) savedByUser = new Map(JSON.parse(fs.readFileSync(SAVED_FILE, 'utf8'))); } catch { savedByUser = new Map(); }
+    try { if (fs.existsSync(FRIEND_FILE)) friendships = JSON.parse(fs.readFileSync(FRIEND_FILE, 'utf8')); if (!Array.isArray(friendships)) friendships = []; } catch { friendships = []; }
     try { if (fs.existsSync(USER_FILE)) registeredUsers = JSON.parse(fs.readFileSync(USER_FILE, 'utf8')); if (!Array.isArray(registeredUsers)) registeredUsers = []; } catch { registeredUsers = []; }
     if (REMOVE_USERS.length) {
       const before = registeredUsers.length;
@@ -205,6 +203,17 @@ async function initStorage() {
     }
   }
   for (const u of registeredUsers) if (u && u.username && !userByName.has(u.username)) userByName.set(u.username, u);
+  /* Lan dau bat tinh nang ket ban (bang friendships dang rong): tu dong ket ban cac tai khoan
+     DA CO voi nhau de khong ai bi mat lien lac; tai khoan dang ky sau nay phai gui loi moi. */
+  if (friendships.length === 0) {
+    const names = [...userByName.keys()];
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+      const [a, b] = pairKey(names[i], names[j]);
+      const f = { a, b, status: 'accepted', requestedBy: a, at: Date.now() };
+      friendships.push(f); saveFriendship(f);
+    }
+    if (names.length > 1) console.log(`[KET BAN] Tu dong ket ban ${friendships.length} cap tai khoan hien co`);
+  }
   for (const m of messages) if (!m.reactions || typeof m.reactions !== 'object') m.reactions = {};
   seq = messages.reduce((m, x) => Math.max(m, x.id || 0), 0);
 }
@@ -272,41 +281,77 @@ app.put('/api/me/avatar', authRest, (req, res) => {
   res.json({ ok: true, avatar });
 });
 
-/* ===== Tin nhan da luu (bookmark ca nhan, luu ban chup noi dung) ===== */
-app.get('/api/saved', authRest, (req, res) => {
-  const list = (savedByUser.get(req.username) || []).slice().sort((a, b) => b.at - a.at);
-  res.json({ saved: list });
+/* ===== Ket ban & loi moi ket ban ===== */
+function relationOf(me, other) {
+  if (me === other) return 'self';
+  const f = findFriendship(me, other);
+  if (!f) return 'none';
+  if (f.status === 'accepted') return 'friend';
+  return f.requestedBy === me ? 'pending_out' : 'pending_in';
+}
+function friendsPayload(me) {
+  const pub = (name) => publicUser(userByName.get(name));
+  return {
+    friends: friendsOf(me).map(pub),
+    incoming: friendships.filter((f) => f.status === 'pending' && f.requestedBy !== me && (f.a === me || f.b === me))
+      .map((f) => ({ user: pub(f.requestedBy), at: f.at })),
+    outgoing: friendships.filter((f) => f.status === 'pending' && f.requestedBy === me)
+      .map((f) => ({ user: pub(f.a === me ? f.b : f.a), at: f.at })),
+  };
+}
+app.get('/api/friends', authRest, (req, res) => res.json(friendsPayload(req.username)));
+
+/* Gui loi moi ket ban. Neu ben kia da gui moi truoc -> coi nhu dong y luon. */
+app.post('/api/friends/request', authRest, (req, res) => {
+  const to = String((req.body || {}).to || '').trim().toLowerCase();
+  if (!userByName.has(to) || to === req.username) return res.status(400).json({ error: 'Nguoi dung khong hop le' });
+  const existing = findFriendship(req.username, to);
+  if (existing && existing.status === 'accepted') return res.status(409).json({ error: 'Đã là bạn bè' });
+  if (existing && existing.status === 'pending') {
+    if (existing.requestedBy === req.username) return res.status(409).json({ error: 'Đã gửi lời mời rồi' });
+    existing.status = 'accepted'; existing.at = Date.now();
+    saveFriendship(existing);
+    emitToUser(to, 'friends:changed', {});
+    emitToUser(to, 'friend:accepted', { by: publicUser(userByName.get(req.username)) });
+    return res.json({ ok: true, status: 'accepted' });
+  }
+  const [a, b] = pairKey(req.username, to);
+  const f = { a, b, status: 'pending', requestedBy: req.username, at: Date.now() };
+  friendships.push(f); saveFriendship(f);
+  emitToUser(to, 'friends:changed', {});
+  emitToUser(to, 'friend:request', { from: publicUser(userByName.get(req.username)) });
+  res.status(201).json({ ok: true, status: 'pending' });
 });
 
-app.post('/api/saved', authRest, (req, res) => {
-  const msgId = Number((req.body || {}).msgId);
-  const msg = messages.find((m) => m.id === msgId);
-  if (!msg || !canAccessMessage(msg, req.username)) return res.status(404).json({ error: 'Khong tim thay tin nhan' });
-  if (msg.type === 'recalled') return res.status(400).json({ error: 'Tin da thu hoi, khong luu duoc' });
-  const list = savedByUser.get(req.username) || [];
-  const existing = list.find((e) => e.msgId === msgId);
-  if (existing) return res.json({ ok: true, entry: existing });
-  if (list.length >= 200) return res.status(400).json({ error: 'Da luu toi da 200 tin' });
-  const snapshot = { id: msg.id, from: msg.from, to: msg.to, groupId: msg.groupId, type: msg.type, content: msg.content, at: msg.at };
-  const entry = { msgId, snapshot, at: Date.now() };
-  list.push(entry);
-  savedByUser.set(req.username, list);
-  storeSaved(req.username, entry);
-  res.status(201).json({ ok: true, entry });
+/* Tra loi loi moi: accept=true dong y, false tu choi (xoa loi moi) */
+app.post('/api/friends/respond', authRest, (req, res) => {
+  const from = String((req.body || {}).from || '').trim().toLowerCase();
+  const accept = !!(req.body || {}).accept;
+  const f = findFriendship(req.username, from);
+  if (!f || f.status !== 'pending' || f.requestedBy !== from) return res.status(404).json({ error: 'Không tìm thấy lời mời' });
+  if (accept) {
+    f.status = 'accepted'; f.at = Date.now(); saveFriendship(f);
+    emitToUser(from, 'friends:changed', {});
+    emitToUser(from, 'friend:accepted', { by: publicUser(userByName.get(req.username)) });
+    return res.json({ ok: true, status: 'accepted' });
+  }
+  friendships = friendships.filter((x) => x !== f); deleteFriendshipRow(f);
+  emitToUser(from, 'friends:changed', {});
+  res.json({ ok: true, status: 'declined' });
 });
 
-app.delete('/api/saved/:msgId', authRest, (req, res) => {
-  const msgId = Number(req.params.msgId);
-  const list = savedByUser.get(req.username) || [];
-  const next = list.filter((e) => e.msgId !== msgId);
-  if (next.length === list.length) return res.status(404).json({ error: 'Khong tim thay tin da luu' });
-  savedByUser.set(req.username, next);
-  removeSaved(req.username, msgId);
+/* Huy ket ban */
+app.delete('/api/friends/:username', authRest, (req, res) => {
+  const other = String(req.params.username || '').trim().toLowerCase();
+  const f = findFriendship(req.username, other);
+  if (!f || f.status !== 'accepted') return res.status(404).json({ error: 'Không phải bạn bè' });
+  friendships = friendships.filter((x) => x !== f); deleteFriendshipRow(f);
+  emitToUser(other, 'friends:changed', {});
   res.json({ ok: true });
 });
 
 app.get('/api/users', authRest, (req, res) => {
-  res.json({ users: [...userByName.values()].map(publicUser), online: [...onlineUsers()] });
+  res.json({ users: [...userByName.values()].map((u) => ({ ...publicUser(u), relation: relationOf(req.username, u.username) })), online: [...onlineUsers()] });
 });
 
 app.get('/api/messages/:peer', authRest, (req, res) => {
@@ -440,6 +485,7 @@ io.on('connection', (socket) => {
       return ack?.({ ok: true, message: msg });
     }
     if (!userByName.has(to) || to === me) return ack?.({ ok: false, error: 'Nguoi nhan khong hop le' });
+    if (!areFriends(me, to)) return ack?.({ ok: false, error: 'Hãy kết bạn trước khi nhắn tin' });
     const msg = { id: ++seq, from: me, to, type, content, at: Date.now(), reactions: {}, ...(replySnap ? { replyTo: replySnap } : {}), ...(forwarded ? { forwarded: true } : {}) };
     messages.push(msg);
     if (messages.length > 5000) messages = messages.slice(-5000);
@@ -482,7 +528,7 @@ io.on('connection', (socket) => {
 
   // ---- WebRTC signaling (chi chuyen tiep, media di ngang hang P2P) ----
   socket.on('call:offer', ({ to, offer, callType } = {}) => {
-    if (!userByName.has(to)) return;
+    if (!userByName.has(to) || !areFriends(me, to)) return;
     emitToUser(to, 'call:incoming', { from: me, fromName: userByName.get(me).displayName, offer, callType: callType === 'video' ? 'video' : 'voice' });
   });
   socket.on('call:answer', ({ to, answer } = {}) => { if (userByName.has(to)) emitToUser(to, 'call:answered', { from: me, answer }); });
