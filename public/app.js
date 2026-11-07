@@ -157,7 +157,7 @@ async function enterApp() {
     renderList();
   });
   socket.on('typing', ({ from }) => { if (from === currentPeer) { $('typing').textContent = 'Đang nhập…'; setTimeout(() => $('typing').textContent = '', 1800); } });
-  socket.on('friends:changed', async () => { await loadFriends(); await refreshUsers(); if (!$('friendsView').hidden) renderFriends(); });
+  socket.on('friends:changed', async () => { await loadFriends(); await refreshUsers(); if (!$('friendsView').hidden) { renderFriends(); renderAddResults(); } });
   socket.on('friend:request', ({ from }) => { notify('🤝 Lời mời kết bạn', `${from.displayName} (@${from.username}) muốn kết bạn với bạn`); ding(); loadFriends(); });
   socket.on('friend:accepted', ({ by }) => { toast('🤝 Đã thành bạn bè', `Bạn và ${by.displayName} đã là bạn bè — nhắn tin được rồi!`); loadFriends(); refreshUsers(); });
   wireCallSocket();
@@ -206,7 +206,7 @@ function setAvatarEl(el, user) {
 function renderList() {
   const q = $('search').value.toLowerCase();
   const gs = groups.filter((g) => g.name.toLowerCase().includes(q));
-  const us = users.filter((u) => friendsSet.has(u.username) && u.displayName.toLowerCase().includes(q));
+  const us = users.filter((u) => u.displayName.toLowerCase().includes(q) || u.username.includes(q));
   let h = '';
   if (gs.length) {
     h += `<div class="list-label">Nhóm</div>` + gs.map((g) => {
@@ -219,14 +219,14 @@ function renderList() {
         ${unread['g:' + g.id] ? `<span class="badge">${unread['g:' + g.id]}</span>` : ''}</div>`;
     }).join('');
   }
-  h += `<div class="list-label">Bạn bè</div>` + (us.length ? us.map((u) => {
+  h += `<div class="list-label">Mọi người</div>` + (us.length ? us.map((u) => {
     const on = online.has(u.username); const last = lastMsg['u:' + u.username];
     return `<div class="conv ${u.username === currentPeer ? 'active' : ''}" data-kind="dm" data-u="${u.username}">
       <div class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}<span class="dot ${on ? 'on' : ''}"></span></div>
       <div class="info"><div><b>${u.displayName}</b></div>
       <div class="muted last">${last ? escapeHtml(preview(last)) : (on ? 'Đang online' : 'Ngoại tuyến')}</div></div>
       ${unread['u:' + u.username] ? `<span class="badge">${unread['u:' + u.username]}</span>` : ''}</div>`;
-  }).join('') : '<div class="muted" style="padding:4px 14px 10px">Chưa có bạn bè nào ở đây.<br>Bấm “🤝 Bạn bè &amp; lời mời” ở trên để kết bạn nhé.</div>');
+  }).join('') : '<div class="muted" style="padding:4px 14px 10px">Không tìm thấy ai khớp.</div>');
   $('convList').innerHTML = h;
 }
 $('search').oninput = renderList;
@@ -500,11 +500,11 @@ $('panelBody').addEventListener('click', (e) => {
 /* Tao nhom */
 $('newGroupBtn').onclick = () => {
   $('groupError').textContent = ''; $('groupName').value = '';
-  $('memberList').innerHTML = users.filter((u) => friendsSet.has(u.username)).map((u) => `<label class="member-row">
+  $('memberList').innerHTML = users.map((u) => `<label class="member-row">
     <input type="checkbox" value="${u.username}">
     <span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span>
     <span><b>${escapeHtml(u.displayName)}</b><br><span class="muted">@${u.username}</span></span>
-  </label>`).join('') || '<p class="muted">Chưa có bạn bè nào — hãy kết bạn trước khi tạo nhóm nhé.</p>';
+  </label>`).join('') || '<p class="muted">Chưa có người dùng nào khác.</p>';
   $('groupView').hidden = false;
 };
 $('cancelGroupBtn').onclick = () => { $('groupView').hidden = true; };
@@ -552,7 +552,7 @@ let forwardTarget = null;
 function openForwardPicker() {
   const rows = [
     ...groups.map((g) => `<button class="fwd-row" data-kind="group" data-id="${g.id}"><span class="avatar gav">👥</span><span>${escapeHtml(g.name)}</span></button>`),
-    ...users.filter((u) => friendsSet.has(u.username)).map((u) => `<button class="fwd-row" data-kind="dm" data-u="${u.username}"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span><span>${escapeHtml(u.displayName)}</span></button>`),
+    ...users.map((u) => `<button class="fwd-row" data-kind="dm" data-u="${u.username}"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : u.displayName[0]}</span><span>${escapeHtml(u.displayName)}</span></button>`),
   ];
   $('forwardList').innerHTML = rows.length ? rows.join('') : '<p class="muted">Chưa có ai để chia sẻ</p>';
   $('forwardView').hidden = false;
@@ -588,7 +588,6 @@ function frRow(u, actions) {
   return `<div class="fr-row"><span class="avatar">${u.avatar ? `<img src="${u.avatar}" alt="">` : escapeHtml((u.displayName || '?')[0])}</span><span class="grow"><b>${escapeHtml(u.displayName)}</b><br><span class="muted">@${escapeHtml(u.username)}</span></span>${actions}</div>`;
 }
 function renderFriends() {
-  const rel = {}; users.forEach((u) => { rel[u.username] = u.relation; });
   let h = '';
   h += '<div class="fr-label">📩 Lời mời đến</div>';
   h += friendsData.incoming.length ? friendsData.incoming.map(({ user: u }) => frRow(u,
@@ -598,19 +597,37 @@ function renderFriends() {
   h += friendsData.friends.length ? friendsData.friends.map((u) => frRow(u,
     `<button class="fr-act go" data-act="chat" data-u="${u.username}">Nhắn tin</button><button class="fr-act" data-act="unfriend" data-u="${u.username}">Huỷ kết bạn</button>`)).join('')
     : '<p class="muted">Chưa có bạn bè nào.</p>';
-  h += '<div class="fr-label">➕ Thêm bạn mới</div>';
-  const addable = users.filter((u) => rel[u.username] === 'none' || rel[u.username] === 'pending_out');
-  h += addable.length ? addable.map((u) => frRow(u,
-    rel[u.username] === 'pending_out' ? '<span class="muted">Đã gửi lời mời…</span>' : `<button class="fr-act go" data-act="add" data-u="${u.username}">Kết bạn</button>`)).join('')
-    : '<p class="muted">Mọi người trong app đều đã là bạn hoặc đang chờ duyệt.</p>';
   if (friendsData.outgoing.length) {
     h += '<div class="fr-label">📤 Đã gửi, đang chờ</div>' + friendsData.outgoing.map(({ user: u }) => frRow(u, '<span class="muted">Chờ đồng ý…</span>')).join('');
   }
   $('friendsBody').innerHTML = h;
 }
-$('friendsBtn').onclick = () => { renderFriends(); $('friendsView').hidden = false; };
+/* Them ban bang @ten tai khoan: go username -> hien tai khoan khop -> Ket ban */
+function renderAddResults() {
+  const q = $('addFriendInput').value.replace('@', '').trim().toLowerCase();
+  const box = $('addFriendResults');
+  if (!q) { box.innerHTML = '<p class="muted">Gõ đúng @tên tài khoản của người bạn muốn kết bạn.</p>'; return; }
+  const hits = users.filter((u) => u.username.includes(q)).slice(0, 6);
+  if (!hits.length) { box.innerHTML = '<p class="muted">Không tìm thấy tài khoản nào khớp “@' + escapeHtml(q) + '”.</p>'; return; }
+  box.innerHTML = hits.map((u) => {
+    let act;
+    if (u.relation === 'friend') act = '<span class="muted">Đã là bạn bè ✓</span>';
+    else if (u.relation === 'pending_out') act = '<span class="muted">Đã gửi lời mời…</span>';
+    else if (u.relation === 'pending_in') act = `<button class="fr-act go" data-act="accept" data-u="${u.username}">Đồng ý</button><button class="fr-act" data-act="decline" data-u="${u.username}">Từ chối</button>`;
+    else act = `<button class="fr-act go" data-act="add" data-u="${u.username}">Kết bạn</button>`;
+    return frRow(u, act + `<button class="fr-act" data-act="chat" data-u="${u.username}">Nhắn tin</button>`);
+  }).join('');
+}
+function openFriends(focusAdd) {
+  renderFriends(); renderAddResults();
+  $('friendsView').hidden = false;
+  if (focusAdd) setTimeout(() => $('addFriendInput').focus(), 60);
+}
+$('friendsBtn').onclick = () => openFriends(false);
+$('addFriendBtn').onclick = () => openFriends(true);
+$('addFriendInput').addEventListener('input', renderAddResults);
 $('friendsClose').onclick = () => { $('friendsView').hidden = true; };
-$('friendsBody').addEventListener('click', async (e) => {
+$('friendsView').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const u = b.dataset.u, act = b.dataset.act;
   const H = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
@@ -630,7 +647,7 @@ $('friendsBody').addEventListener('click', async (e) => {
       const r = await fetch('/api/friends/' + encodeURIComponent(u), { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
       if (!r.ok) throw new Error('Không huỷ kết bạn được');
     }
-    await loadFriends(); await refreshUsers(); renderFriends();
+    await loadFriends(); await refreshUsers(); renderFriends(); renderAddResults();
   } catch (err) { toast('Lỗi', err.message); }
 });
 
@@ -915,6 +932,7 @@ function cleanupCall(sendHistory, label) {
 }
 async function startCall(type) {
   if (!currentPeer) return;
+  if (!friendsSet.has(currentPeer)) { toast('Chưa gọi được', 'Hãy kết bạn với ' + peerName(currentPeer) + ' trước khi gọi — bấm nút thêm bạn bè (icon người +) ở thanh bên trái nhé'); return; }
   callType = type; callPeer = currentPeer; newPC();
   try { await getMedia(); } catch (err) { showCallError(err); return; }
   showCall(peerName(callPeer), 'Đang gọi…');
