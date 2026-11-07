@@ -32,6 +32,7 @@ const LEGACY_GIFS = [
 let token = localStorage.getItem('token') || '';
 let me = null, socket = null, users = [], groups = [], online = new Set();
 let currentPeer = null, currentGroup = null, unread = {}, lastMsg = {};
+let pendingConv = new URLSearchParams(location.search).get('conv'); /* mo tu thong bao day */
 const msgsCache = {};
 /* Tin nhan da "xoa phia toi": chi an tren may nay, luu danh sach id trong localStorage */
 let deletedIds = new Set();
@@ -81,7 +82,7 @@ $('soundBtn').onclick = () => {
   localStorage.setItem('notif', soundOn ? 'on' : 'off');
   $('soundBtn').textContent = soundOn ? '🔔' : '🔕';
   toast(soundOn ? 'Đã bật thông báo' : 'Đã tắt thông báo', soundOn ? 'Có chuông + thông báo khi có tin nhắn mới' : 'Sẽ không có chuông hay thông báo đẩy nữa');
-  if (!soundOn) stopRing(); else ding();
+  if (!soundOn) { stopRing(); teardownPush(); } else { ding(); setupPush(); }
 };
 
 $('loginForm').addEventListener('submit', async (e) => {
@@ -94,7 +95,7 @@ $('loginForm').addEventListener('submit', async (e) => {
     token = d.token; localStorage.setItem('token', token); me = d.user; enterApp();
   } catch (err) { $('loginError').textContent = err.message; }
 });
-$('logoutBtn').onclick = () => { localStorage.removeItem('token'); location.reload(); };
+$('logoutBtn').onclick = () => { teardownPush(); localStorage.removeItem('token'); location.reload(); };
 
 /* Tao tai khoan moi - server luu tai khoan, tao xong dang nhap ngay */
 $('showRegister').onclick = (e) => { e.preventDefault(); $('loginForm').hidden = true; $('registerForm').hidden = false; };
@@ -115,11 +116,12 @@ async function enterApp() {
   $('myName').textContent = me.displayName; $('myUser').textContent = '@' + me.username;
   setAvatarEl($('myAvatar'), me);
   ensureAudio();
-  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(() => setupPush());
   const r = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + token } });
   users = (await r.json()).users.filter((u) => u.username !== me.username);
   await loadGroups();
   await loadFriends();
+  await loadUnread();
   socket = io({ auth: { token } });
   socket.on('connect', () => socket.emit('presence:get'));
   socket.on('presence', ({ online: o }) => { online = new Set(o); renderList(); if (currentPeer) $('peerStatus').textContent = online.has(currentPeer) ? 'Đang online' : 'Ngoại tuyến'; });
@@ -162,6 +164,63 @@ async function enterApp() {
   socket.on('friend:accepted', ({ by }) => { toast('🤝 Đã thành bạn bè', `Bạn và ${by.displayName} đã là bạn bè — nhắn tin được rồi!`); loadFriends(); refreshUsers(); });
   wireCallSocket();
   renderList();
+  setupPush();
+  if (pendingConv) { const c = pendingConv; pendingConv = null; openConvByKey(c); }
+}
+
+/* ===== Da doc / chua doc + thong bao day (Web Push) ===== */
+async function loadUnread() {
+  try {
+    const r = await fetch('/api/unread', { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) return;
+    const d = await r.json();
+    unread = d.unread || {};
+    for (const [k, m] of Object.entries(d.last || {})) if (!deletedIds.has(m.id)) lastMsg[k] = m;
+    const total = Object.values(unread).reduce((a, b) => a + b, 0);
+    if (total > 0) setTimeout(() => toast('🔔 Tin nhắn mới khi bạn vắng mặt', `Bạn có ${total} tin chưa đọc trong ${Object.keys(unread).length} cuộc trò chuyện`), 700);
+  } catch { /* bo qua */ }
+}
+async function markRead(conv, lastId) {
+  try { await fetch('/api/read', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ conv, lastId }) }); } catch { /* bo qua */ }
+}
+function openConvByKey(key) {
+  if (!key) return;
+  if (!me) { pendingConv = key; return; }
+  if (key.startsWith('g:')) openGroup(key.slice(2)); else if (key.startsWith('u:')) openChat(key.slice(2));
+}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'open-conv') openConvByKey(e.data.conv); });
+}
+function urlB64ToUint8(b64) {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function setupPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    if (!soundOn || !('Notification' in window) || Notification.permission !== 'granted') return;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const kr = await fetch('/api/push/key', { headers: { Authorization: 'Bearer ' + token } });
+      const { publicKey } = await kr.json();
+      if (!publicKey) return;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(publicKey) });
+    }
+    await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(sub) });
+  } catch { /* trinh duyet khong ho tro hoac chua cap quyen */ }
+}
+async function teardownPush() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    if (sub) {
+      fetch('/api/push/subscribe', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ endpoint: sub.endpoint }), keepalive: true }).catch(() => {});
+      await sub.unsubscribe();
+    }
+  } catch { /* bo qua */ }
 }
 
 async function refreshUsers() {
@@ -306,6 +365,7 @@ async function openChat(peer) {
     for (const m of msgsCache[key]) if (!deletedIds.has(m.id)) lastMsg[key] = m;
   }
   $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
+  const arr = msgsCache[key]; if (arr.length) markRead(key, arr[arr.length - 1].id);
 }
 async function openGroup(id) {
   const g = groupById(id); if (!g) return;
@@ -326,6 +386,7 @@ async function openGroup(id) {
     for (const m of msgsCache[key]) if (!deletedIds.has(m.id)) lastMsg[key] = m;
   }
   $('messages').innerHTML = ''; msgsCache[key].forEach(renderMsg); scrollDown();
+  const arr = msgsCache[key]; if (arr.length) markRead(key, arr[arr.length - 1].id);
 }
 $('backBtn').onclick = () => document.querySelector('#appView').classList.remove('chat-open');
 
@@ -418,7 +479,7 @@ function onIncomingMessage(m) {
   const key = keyOf(m);
   (msgsCache[key] = msgsCache[key] || []).push(m); lastMsg[key] = m;
   const viewing = key === currentKey();
-  if (viewing && m.from !== me.username) { renderMsg(m); scrollDown(); }
+  if (viewing && m.from !== me.username) { renderMsg(m); scrollDown(); markRead(key, m.id); }
   else if (m.from !== me.username) {
     unread[key] = (unread[key] || 0) + 1;
     if (m.groupId) { const g = groupById(m.groupId); notify(g ? g.name : 'Nhóm', peerName(m.from) + ': ' + preview(m)); }
